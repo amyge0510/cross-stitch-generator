@@ -303,3 +303,50 @@ dialog::backdrop { background: rgba(42, 32, 28, 0.45); }
     font: 8pt var(--mono); color: #777;
   }
 }
+
+/* ---------- templates & simple flow ---------- */
+.template-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.template {
+  border: 1px solid var(--card-line); background: #fff; border-radius: 12px; padding: 6px 6px 8px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px; text-align: left;
+}
+.template:hover { border-color: #cbbfb1; }
+.template.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
+.template .thumb { height: 92px; display: grid; place-items: center; background: var(--stage); border-radius: 8px; }
+.template canvas { display: block; box-shadow: 0 2px 6px rgba(40, 25, 15, 0.18); }
+.template strong { font-size: 13px; font-weight: 600; line-height: 1.1; }
+.template small { font: 10px/1.2 var(--mono); color: var(--muted); }
+
+.filters.compact { grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); }
+.filters.compact .filter { font-size: 10.5px; }
+
+.word-fields { display: grid; gap: 10px; }
+.word-field { display: grid; gap: 4px; }
+.word-field label { font: 500 10px var(--mono); letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); }
+.word-field input, .word-field textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--card-line); border-radius: 12px; background: #fff; font-size: 17px;
+}
+.word-field textarea { resize: vertical; min-height: 0; }
+.word-field.on input, .word-field.on textarea { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.word-empty { margin: 0; color: var(--muted); font-size: 13px; }
+
+details.more { padding: 0; }
+details.more > summary {
+  list-style: none; cursor: pointer; padding: 16px; display: flex; flex-direction: column; gap: 2px;
+}
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::before {
+  content: "+"; float: right; font: 400 22px var(--ui); color: var(--muted); position: absolute; right: 18px;
+}
+details.more { position: relative; }
+details.more[open] > summary::before { content: "−"; }
+details.more .more-title { font-size: 20px; font-weight: 500; }
+details.more > summary small { color: var(--muted); font-size: 13px; }
+details.more > :not(summary) { padding: 0 16px; }
+details.more > :last-child { padding-bottom: 16px; }
+#sec-motifs { margin-top: 18px; padding-top: 4px; border-top: 1px dashed var(--card-line); }
+.panel > .micro { margin-top: 0; }
+
+@media (max-width: 520px) {
+  .template-grid { grid-template-columns: repeat(2, 1fr); }
+}

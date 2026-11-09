@@ -22,7 +22,8 @@ export const WEIGHTS = [
 export const fontById = (id) => FONTS.find((f) => f.id === id) || FONTS[0];
 export const fontCss = (f, px) => `${f.style} ${f.weight} ${px}px ${f.family}, cursive`;
 
-const SAMPLE = 8; // canvas px per stitch when rasterizing text
+// Canvas px per stitch when rasterizing text: fewer for big letters so typing stays fast.
+const sampleFor = (size) => Math.max(3, Math.min(8, Math.round(112 / size)));
 const STROKE = [0.15, 0, 0.4, 0.85]; // extra outline (in stitches) per weight
 const cache = new Map();
 let fontEpoch = 0;
@@ -88,7 +89,7 @@ let rasterCanvas = null;
 
 function textBitmap(el) {
   const f = fontById(el.font);
-  const S = SAMPLE;
+  const S = sampleFor(el.size);
   const px = Math.max(4, el.size) * S * (f.scale || 1);
   const lines = String(el.text || '').split('\n');
   if (!rasterCanvas) rasterCanvas = document.createElement('canvas');
@@ -125,7 +126,7 @@ function textBitmap(el) {
   // Single line: find each stroke's centerline at full resolution, then stitch the squares it runs through.
   if (single) thin(ink);
   const bm = makeBitmap(cols, rows);
-  const need = single ? 2 : S * S * 0.4;
+  const need = single ? (S >= 6 ? 2 : 1) : S * S * 0.4;
   for (let cy = 0; cy < rows; cy++) {
     for (let cx = 0; cx < cols; cx++) {
       let on = 0;

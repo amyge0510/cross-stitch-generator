@@ -5,6 +5,7 @@ import {
   drawScene, gridOf, boundsOf, snapStitch, photoGeometry, isStitch, paintStitches, stats, EDGES, filteredImage,
 } from './render.js';
 import { printDesign, printPreview, exportPNG, PAPERS, formatLength, inchLabel } from './print.js';
+import { TEMPLATES, templateById, buildTemplate, fitText } from './templates.js';
 
 const $ = (s) => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -21,10 +22,11 @@ const SIZES = [
   { w: 4, h: 11, note: 'long strip' },
 ];
 const PITCHES = [
-  { n: 10, name: 'Fine' },
-  { n: 8, name: 'Classic' },
-  { n: 6, name: 'Bold' },
-  { n: 5, name: 'Chunky' },
+  { n: 16, name: 'Hairline' },
+  { n: 14, name: 'Fine' },
+  { n: 12, name: 'Classic' },
+  { n: 10, name: 'Medium' },
+  { n: 8, name: 'Bold' },
 ];
 const SHAPES = [
   { id: 'orig', name: 'Original' },
@@ -50,14 +52,15 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v1';
+const STORE = 'stitched:v2';
+const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
 let selectedId = null;
 let cropId = null;
 let hoverId = null;
 const view = { zoom: 1, mode: 'real', grid: false };
-const prefs = { thread: '#C1121F', font: 'vibes', size: 14, weight: 0, align: 'center', draft: '' };
+const prefs = { thread: '#C1121F', font: 'vibes', size: 18, weight: 0, align: 'center', draft: '', letter: null };
 const printOpts = {
   paper: /^en-(US|CA)|^es-(MX|US)/.test(navigator.language || '') ? 'letter' : 'a4',
   holes: true, photos: true, guide: false, paperFill: false, trim: true, chart: true,
@@ -74,15 +77,36 @@ function textEl(text, extra = {}) {
 }
 
 function starterDoc() {
-  const d = { w: 8, h: 10, pitch: 1 / 8, paper: '#FBF8F2', grain: true, elements: [] };
-  d.elements.push({
-    id: uid(), type: 'photo', imgId: null, x: 2.1, y: 2.7, w: 3.8, h: 4.6,
-    zoom: 1, panX: 0, panY: 0, filter: 'classic', edge: 'none', brightness: 0, contrast: 0,
+  return buildTemplate(TEMPLATES[0], { pitch: DEFAULT_PITCH, uid });
+}
+
+/** Switch to a template, carrying over photos and words the person already added. */
+function applyTemplate(id, { fresh = false } = {}) {
+  const t = templateById(id);
+  if (!t) return;
+  flush();
+  const photos = fresh ? [] : doc.elements.filter((e) => e.type === 'photo' && images.get(e.imgId));
+  const texts = {};
+  if (!fresh) {
+    for (const e of doc.elements) if (e.type === 'text' && e.slot && !(e.slot in texts)) texts[e.slot] = e.text;
+    if (!texts.names && texts.i1 && texts.i2) texts.names = `${texts.i1} + ${texts.i2}`;
+    if (texts.names && !texts.i1) {
+      const parts = texts.names.split(/\s*[&+]\s*|\s+and\s+/i).filter(Boolean);
+      if (parts.length === 2) [texts.i1, texts.i2] = parts;
+    }
+  }
+  const next = buildTemplate(t, { pitch: doc ? doc.pitch : DEFAULT_PITCH, texts, uid, font: fresh ? null : prefs.letter });
+  next.elements.filter((e) => e.type === 'photo').forEach((spot, i) => {
+    const src = photos[i];
+    if (src) Object.assign(spot, { imgId: src.imgId, filter: src.filter, brightness: src.brightness, contrast: src.contrast });
   });
-  d.elements.push(textEl('how lucky', { size: 14, x: 4, y: 0.55, center: true }));
-  d.elements.push(textEl('are we', { size: 14, x: 4, y: 7.75, center: true }));
-  d.elements.push({ id: uid(), type: 'motif', motif: 'mini-hearts', scale: 1, rot: 0, flip: false, color: prefs.thread, x: 6.75, y: 3.0, center: true });
-  return d;
+  prefs.thread = t.thread;
+  doc = next;
+  selectedId = null;
+  cropId = null;
+  commit();
+  render();
+  if (window.matchMedia('(max-width: 960px)').matches) $('.stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /** Elements flagged `center` were placed by their center point; resolve that once bitmaps exist. */
@@ -114,6 +138,8 @@ function commit() {
   sync();
 }
 let commitTimer = 0;
+/** Typing and sliding commit on a timer; make sure that lands before any other change starts. */
+const flush = () => { if (commitTimer) { clearTimeout(commitTimer); commitTimer = 0; commit(); } };
 function commitSoon(ms = 500) {
   clearTimeout(commitTimer);
   commitTimer = setTimeout(() => { commitTimer = 0; commit(); }, ms);
@@ -458,7 +484,11 @@ function resize(el, d, p) {
     return;
   }
   const f = Math.max(Math.abs(p.x - ax) / b0.w, Math.abs(p.y - ay) / b0.h);
-  if (el.type === 'text') el.size = clamp(Math.round(orig.size * f), 5, 160);
+  if (el.type === 'text') {
+    el.size = clamp(Math.round(orig.size * f), 5, 160);
+    el.baseSize = el.size;
+    delete el.maxW; delete el.maxH; // they sized it by hand, so stop auto-fitting
+  }
   if (el.type === 'motif') el.scale = clamp(Math.round(orig.scale * f), 1, 10);
   const b = boundsOf(doc, el);
   el.x = hx < 0 ? R - b.w : L;
@@ -473,10 +503,12 @@ function openElement(hit) {
     if (!images.get(hit.imgId)) pickFiles(hit.id);
     else enterCrop(hit.id);
   } else if (hit.type === 'text') {
-    const ta = $('#textInput');
-    ta.focus();
-    ta.select();
-    $('#sec-text').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const input = $(`#wordFields [data-id="${hit.id}"] input, #wordFields [data-id="${hit.id}"] textarea`);
+    if (input) {
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      input.focus({ preventScroll: true });
+      input.select();
+    }
   }
 }
 
@@ -493,16 +525,19 @@ canvas.addEventListener('wheel', (e) => {
 
 // ---------------------------------------------------------------- selection & element ops
 
-function select(id) {
+function select(id, { scroll = true } = {}) {
   if (id === selectedId) return;
   selectedId = id;
   if (cropId && cropId !== id) cropId = null;
   sync();
   const el = selected();
-  if (el && window.matchMedia('(min-width: 961px)').matches) {
-    const sec = el.type === 'photo' ? '#sec-photos' : el.type === 'text' ? '#sec-text' : '#sec-motifs';
-    const target = el.type === 'photo' ? '#photoEdit' : el.type === 'motif' ? '#motifEdit' : el.type === 'frame' ? '#frameEdit' : sec;
-    $(target).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (!el || !scroll || !window.matchMedia('(min-width: 961px)').matches) return;
+  const opts = { behavior: 'smooth', block: 'nearest' };
+  if (el.type === 'photo') $('#photoEdit').scrollIntoView(opts);
+  else if (el.type === 'text') $(`#wordFields [data-id="${el.id}"]`)?.scrollIntoView(opts);
+  else {
+    $('#sec-more').open = true;
+    $(el.type === 'motif' ? '#motifEdit' : '#frameEdit').scrollIntoView(opts);
   }
 }
 
@@ -550,7 +585,7 @@ function nextSpot() {
 }
 
 /** Change a text element while keeping it anchored per its alignment. */
-function keepAnchor(el, fn) {
+function keepAnchor(el, fn, { vertical = false } = {}) {
   const b0 = boundsOf(doc, el);
   fn();
   const b1 = boundsOf(doc, el);
@@ -558,7 +593,7 @@ function keepAnchor(el, fn) {
   if (anchor === 'center') el.x += b0.x + b0.w / 2 - (b1.x + b1.w / 2);
   else if (anchor === 'right') el.x += b0.x + b0.w - (b1.x + b1.w);
   else el.x += b0.x - b1.x;
-  if (el.type !== 'text') el.y += b0.y + b0.h / 2 - (b1.y + b1.h / 2);
+  if (el.type !== 'text' || vertical) el.y += b0.y + b0.h / 2 - (b1.y + b1.h / 2);
   if (isStitch(el)) snapStitch(doc, el);
 }
 
@@ -849,6 +884,13 @@ function setPitch(n) {
   const ratio = doc.pitch / p;
   doc.pitch = p;
   doc.elements.forEach((el, i) => {
+    // keep everything about the same size on paper
+    if (el.type === 'text') {
+      el.size = Math.max(5, Math.round(el.size * ratio));
+      if (el.baseSize) el.baseSize = Math.max(5, Math.round(el.baseSize * ratio));
+      fitText(doc, el);
+    }
+    if (el.type === 'motif') el.scale = Math.max(1, Math.round(el.scale * ratio - 0.01));
     if (el.type === 'frame') {
       const g = gridOf(doc);
       el.cols = Math.min(g.cols, Math.max(3, Math.round(el.cols * ratio)));
@@ -870,14 +912,20 @@ function updateSelected(fn, { anchor = false, live = false } = {}) {
   return true;
 }
 
-function setThread(c) {
+function setThread(c, { live = false } = {}) {
   prefs.thread = c;
   const el = selected();
-  if (el && isStitch(el)) { el.color = c; commit(); render(); } else sync();
+  if (el && isStitch(el)) el.color = c;
+  else for (const x of doc.elements) if (isStitch(x)) x.color = c;
+  render();
+  if (live) { syncLive(); commitSoon(); } else commit();
 }
 
 function buildPanel() {
-  // 01 canvas
+  buildTemplates();
+  buildSimpleControls();
+
+  // size & stitch
   chips($('#sizeChips'), SIZES.map((s) => ({ id: `${s.w}x${s.h}`, html: `${s.w} × ${s.h}″<small>${s.note}</small>` })), {
     onClick: (id) => {
       const [a, b] = id.split('x').map(Number);
@@ -932,7 +980,7 @@ function buildPanel() {
   ta.addEventListener('input', () => {
     const el = selected();
     if (el?.type === 'text') {
-      keepAnchor(el, () => { el.text = ta.value; });
+      keepAnchor(el, () => { el.text = ta.value; fitText(doc, el); }, { vertical: !!el.slot });
       render();
       syncLive();
       commitSoon(700);
@@ -943,7 +991,7 @@ function buildPanel() {
   $('#textSize').addEventListener('input', (e) => {
     prefs.size = +e.target.value;
     const el = selected();
-    if (el?.type === 'text') updateSelected((x) => { x.size = prefs.size; }, { anchor: true, live: true });
+    if (el?.type === 'text') updateSelected((x) => { x.size = x.baseSize = prefs.size; delete x.maxW; delete x.maxH; }, { anchor: true, live: true });
     else syncLive();
   });
   chips($('#weightChips'), WEIGHTS, {
@@ -1012,12 +1060,7 @@ function buildPanel() {
   $('#paperPick').addEventListener('input', (e) => { doc.paper = e.target.value.toUpperCase(); render(); syncLive(); commitSoon(); });
   $('#paperHex').addEventListener('change', (e) => { if (hexOk(e.target.value)) { doc.paper = norm(e.target.value); commit(); render(); } else sync(); });
   $('#grainToggle').addEventListener('change', (e) => { doc.grain = e.target.checked; commit(); render(); });
-  $('#threadPick').addEventListener('input', (e) => {
-    prefs.thread = e.target.value.toUpperCase();
-    const el = selected();
-    if (el && isStitch(el)) { el.color = prefs.thread; render(); commitSoon(); }
-    syncLive();
-  });
+  $('#threadPick').addEventListener('input', (e) => setThread(e.target.value.toUpperCase(), { live: true }));
   $('#threadHex').addEventListener('change', (e) => (hexOk(e.target.value) ? setThread(norm(e.target.value)) : sync()));
   $('#threadAllBtn').addEventListener('click', () => {
     const el = selected();
@@ -1027,8 +1070,6 @@ function buildPanel() {
     render();
   });
 
-  // Typing and sliding commit on a timer; make sure that lands before any other change starts.
-  const flush = () => { if (commitTimer) { clearTimeout(commitTimer); commitTimer = 0; commit(); } };
   for (const id of ['#textInput', '#textSize', '#photoZoom', '#photoBri', '#photoCon', '#paperPick', '#threadPick']) {
     $(id).addEventListener('change', flush);
     $(id).addEventListener('blur', flush);
@@ -1043,12 +1084,9 @@ function buildPanel() {
   $('#undoBtn').addEventListener('click', undo);
   $('#redoBtn').addEventListener('click', redo);
   $('#newBtn').addEventListener('click', () => {
-    if (!confirm('Start a new, blank design? You can undo this.')) return;
-    doc = { w: doc.w, h: doc.h, pitch: doc.pitch, paper: doc.paper, grain: doc.grain, elements: [] };
-    selectedId = null;
-    cropId = null;
-    commit();
-    render();
+    if (!confirm('Start this template over from scratch? You can undo this.')) return;
+    prefs.letter = null;
+    applyTemplate(doc.template || TEMPLATES[0].id, { fresh: true });
   });
   $('#viewSeg').addEventListener('click', (e) => {
     const v = e.target.closest('button')?.dataset.view;
@@ -1062,6 +1100,161 @@ function buildPanel() {
   $('#zoomIn').addEventListener('click', () => zoomTo(view.zoom * 1.25));
   $('#zoomOut').addEventListener('click', () => zoomTo(view.zoom / 1.25));
   $('#zoomFit').addEventListener('click', () => zoomTo(1));
+}
+
+// ---------------------------------------------------------------- simple flow: templates, photo style, words
+
+function buildTemplates() {
+  const grid = $('#templateGrid');
+  for (const t of TEMPLATES) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'template';
+    b.dataset.id = t.id;
+    b.innerHTML = `<div class="thumb"><canvas></canvas></div><strong>${t.name}</strong><small>${t.note}</small>`;
+    b.addEventListener('click', () => applyTemplate(t.id));
+    grid.appendChild(b);
+  }
+  renderTemplateThumbs();
+}
+
+function renderTemplateThumbs() {
+  const dpr = window.devicePixelRatio || 1;
+  for (const b of $('#templateGrid').children) {
+    const t = templateById(b.dataset.id);
+    const cv = b.querySelector('canvas');
+    const d = buildTemplate(t, { pitch: DEFAULT_PITCH, uid });
+    const ppi = Math.min(84 / t.w, 80 / t.h);
+    cv.width = Math.round(t.w * ppi * dpr);
+    cv.height = Math.round(t.h * ppi * dpr);
+    cv.style.width = `${t.w * ppi}px`;
+    cv.style.height = `${t.h * ppi}px`;
+    const c = cv.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawScene(c, d, new Map(), {
+      ppi, ox: 0, oy: 0, stitches: 'real', photos: true, paperFill: true, grain: false, placeholders: 'thumb', shadows: false,
+    });
+  }
+}
+
+const allPhotos = () => doc.elements.filter((e) => e.type === 'photo');
+
+let styleFor = null;
+function buildStyleChips() {
+  const first = allPhotos().find((e) => images.get(e.imgId));
+  const key = first ? first.imgId : 'none';
+  if (styleFor === key) return;
+  styleFor = key;
+  const box = $('#styleChips');
+  box.innerHTML = '';
+  const image = first && images.get(first.imgId);
+  const small = image ? applyFilter(image.img, image.w, image.h, 'original', 0, 0, 120) : null;
+  for (const f of FILTERS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'filter';
+    b.dataset.id = f.id;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 80;
+    const g = cv.getContext('2d');
+    if (small) {
+      const t = applyFilter(small, small.width, small.height, f.id, 0, 0, 120);
+      const sc = Math.max(80 / t.width, 80 / t.height);
+      g.drawImage(t, (80 - t.width * sc) / 2, (80 - t.height * sc) / 2, t.width * sc, t.height * sc);
+    } else {
+      const grad = g.createLinearGradient(0, 0, 80, 80);
+      grad.addColorStop(0, '#e9c9b5'); grad.addColorStop(1, '#6d8fb3');
+      g.fillStyle = grad; g.fillRect(0, 0, 80, 80);
+      g.drawImage(applyFilter(cv, 80, 80, f.id, 0, 0, 80), 0, 0);
+    }
+    b.append(cv, document.createTextNode(f.name));
+    b.addEventListener('click', () => {
+      const photos = allPhotos();
+      if (!photos.length) { toast('This template has no photo spots. Add one under “Make it your own”.'); return; }
+      for (const p of photos) p.filter = f.id;
+      commit();
+      render();
+    });
+    box.appendChild(b);
+  }
+}
+
+function buildSimpleControls() {
+  buildStyleChips();
+  const box = $('#letterChips');
+  for (const f of FONTS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'font-chip';
+    b.dataset.id = f.id;
+    const sample = document.createElement('span');
+    sample.className = 'sample';
+    sample.textContent = 'A J';
+    sample.style.font = fontCss(f, 22);
+    b.append(sample, Object.assign(document.createElement('small'), { textContent: f.name }));
+    b.addEventListener('click', () => {
+      prefs.letter = f.id;
+      prefs.font = f.id;
+      for (const el of doc.elements) {
+        if (el.type !== 'text') continue;
+        keepAnchor(el, () => { el.font = f.id; fitText(doc, el); }, { vertical: true });
+      }
+      commit();
+      render();
+    });
+    box.appendChild(b);
+  }
+}
+
+let wordKey = '';
+function syncWords() {
+  const box = $('#wordFields');
+  const texts = doc.elements.filter((e) => e.type === 'text');
+  const key = texts.map((e) => `${e.id}:${e.text.includes('\n')}`).join('|');
+  if (key !== wordKey) {
+    wordKey = key;
+    box.innerHTML = '';
+    if (!texts.length) {
+      box.innerHTML = '<p class="word-empty">No words on this design. Add some under “Make it your own” below.</p>';
+    }
+    texts.forEach((el, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'word-field';
+      wrap.dataset.id = el.id;
+      const label = document.createElement('label');
+      label.htmlFor = `word-${el.id}`;
+      label.textContent = el.label || (texts.length > 1 ? `Words ${i + 1}` : 'Words');
+      const multi = el.text.includes('\n');
+      const input = document.createElement(multi ? 'textarea' : 'input');
+      input.id = `word-${el.id}`;
+      if (multi) input.rows = el.text.split('\n').length;
+      else input.type = 'text';
+      input.value = el.text;
+      input.autocomplete = 'off';
+      input.spellcheck = false;
+      input.addEventListener('input', () => {
+        const t = byId(el.id);
+        if (!t) return;
+        keepAnchor(t, () => { t.text = input.value; fitText(doc, t); }, { vertical: !!t.slot });
+        render();
+        syncLive();
+        commitSoon(700);
+      });
+      input.addEventListener('focus', () => select(el.id, { scroll: false }));
+      input.addEventListener('blur', flush);
+      input.addEventListener('change', flush);
+      wrap.append(label, input);
+      box.appendChild(wrap);
+    });
+  }
+  for (const wrap of box.querySelectorAll('.word-field')) {
+    const el = byId(wrap.dataset.id);
+    const input = wrap.querySelector('input, textarea');
+    if (el && document.activeElement !== input && input.value !== el.text) input.value = el.text;
+    wrap.classList.toggle('on', wrap.dataset.id === selectedId);
+  }
+  const first = texts[0];
+  setOn($('#letterChips'), first ? first.font : prefs.letter || prefs.font);
 }
 
 async function saveImage() {
@@ -1154,7 +1347,8 @@ function syncLive() {
   const st = stats(doc);
   const g = gridOf(doc);
   $('#stats').innerHTML = `<b>${st.stitches.toLocaleString()}</b> stitches · <b>${st.holes.toLocaleString()}</b> holes to punch<br>~${formatLength(st.threadIn)} of thread · ${g.cols} × ${g.rows} squares`;
-  $('#textSizeOut').textContent = `${el?.type === 'text' ? el.size : prefs.size} st · ${((el?.type === 'text' ? el.size : prefs.size) * doc.pitch).toFixed(1)}″`;
+  const ts = el?.type === 'text' ? el.size : prefs.size;
+  $('#textSizeOut').textContent = `${(ts * doc.pitch).toFixed(2)}″ · ${ts} st`;
   if (el?.type === 'photo') {
     $('#photoZoom').value = el.zoom || 1;
   }
@@ -1175,6 +1369,13 @@ function syncLive() {
 function sync() {
   const el = selected();
   const g = gridOf(doc);
+
+  setOn($('#templateGrid'), doc.template || '');
+  buildStyleChips();
+  const photos = allPhotos();
+  const shared = photos.length && photos.every((p) => p.filter === photos[0].filter) ? photos[0].filter : '';
+  setOn($('#styleChips'), shared);
+  syncWords();
 
   // 01
   const sizeId = SIZES.find((s) => (s.w === doc.w && s.h === doc.h) || (s.w === doc.h && s.h === doc.w));
@@ -1219,7 +1420,9 @@ function sync() {
 
   // 05
   $('#grainToggle').checked = !!doc.grain;
-  $('#threadTarget').textContent = el && isStitch(el) ? '· selected' : '· for new stitches';
+  const one = el && isStitch(el);
+  $('#threadTarget').textContent = one ? '· just the selected piece' : '· all stitches';
+  $('#threadAllBtn').hidden = !one;
 
   // misc
   $('#undoBtn').disabled = history.index <= 0;
@@ -1325,12 +1528,15 @@ function boot() {
     for (const el of doc.elements) {
       const b0 = before.get(el.id);
       if (!b0) continue;
+      fitText(doc, el);
       const b1 = boundsOf(doc, el);
       if (el.align === 'center') el.x += b0.x + b0.w / 2 - (b1.x + b1.w / 2);
       else if (el.align === 'right') el.x += b0.x + b0.w - (b1.x + b1.w);
+      el.y += b0.y + b0.h / 2 - (b1.y + b1.h / 2);
       snapStitch(doc, el);
     }
     history.stack[history.index] = snapshot();
+    renderTemplateThumbs();
     sync();
     render();
   });

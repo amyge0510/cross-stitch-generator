@@ -273,6 +273,13 @@ export function drawScene(ctx, doc, images, o) {
         if (o.photos === false || !image) {
           if (o.placeholders === 'print') drawPhotoOutline(ctx, el, toX, toY, ppi);
           else if (!image && o.placeholders === 'editor') drawPhoto(ctx, el, null, toX, toY, ppi, false, 'editor');
+          else if (!image && o.placeholders === 'thumb') {
+            const g = ctx.createLinearGradient(0, toY(el.y), 0, toY(el.y + el.h));
+            g.addColorStop(0, '#b9b2aa');
+            g.addColorStop(1, '#8e8780');
+            ctx.fillStyle = g;
+            ctx.fillRect(toX(el.x), toY(el.y), el.w * ppi, el.h * ppi);
+          }
           continue;
         }
         drawPhoto(ctx, el, image, toX, toY, ppi, shadows, o.placeholders);

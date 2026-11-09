@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Stitched · cross-stitch photo cards</title>
-  <meta name="description" content="Design a cross-stitch photo card: add photos, cursive words and stitched motifs, then print a punch template.">
+  <meta name="description" content="Pick a template, add your photo and initials, and print a cross-stitch punch template for a photo card.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23f4efe6'/><path d='M9 9l14 14M23 9L9 23' stroke='%23b3202a' stroke-width='4.5' stroke-linecap='round'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,7 +15,7 @@
   <div class="app" id="app">
     <header class="topbar">
       <div class="topbar-left">
-        <button class="ghost" id="newBtn" title="Start a new design">New design</button>
+        <button class="ghost" id="newBtn" title="Reset this template">Start over</button>
       </div>
       <div class="brand">
         <h1>stitched !!</h1>
@@ -51,28 +51,20 @@
       </section>
 
       <aside class="panel" id="panel">
-        <section class="card" id="sec-canvas">
-          <h2><span class="num">01</span> Choose the canvas</h2>
-          <div class="chips" id="sizeChips"></div>
-          <div class="custom-size">
-            <label>W <input type="number" id="wIn" min="2" max="16" step="0.25"></label>
-            <span class="x">×</span>
-            <label>H <input type="number" id="hIn" min="2" max="16" step="0.25"></label>
-            <span class="unit">in</span>
-            <button class="small" id="swapBtn" title="Swap portrait / landscape">⇄ Rotate</button>
-          </div>
-          <div class="sub">Hole spacing</div>
-          <div class="chips" id="pitchChips"></div>
-          <p class="hint" id="gridInfo"></p>
+        <section class="card" id="sec-template">
+          <h2><span class="num">01</span> Pick a template</h2>
+          <div class="template-grid" id="templateGrid"></div>
         </section>
 
         <section class="card" id="sec-photos">
-          <h2><span class="num">02</span> Add photos</h2>
+          <h2><span class="num">02</span> Add your photo</h2>
           <button class="dropzone" id="uploadBtn">
             <strong>＋ Upload photos</strong>
-            <small>or drag them straight onto the card</small>
+            <small>they fill the photo spots in order · or drag onto the card</small>
           </button>
-          <button class="link" id="addFrameBtn">Add an empty photo spot</button>
+          <div class="sub">Photo style</div>
+          <div class="filters compact" id="styleChips"></div>
+          <p class="hint">Tap a photo on the card to crop, zoom or give it a border.</p>
           <div class="edit-block" id="photoEdit" hidden>
             <div class="edit-title">Selected photo</div>
             <div class="sub">Filter</div>
@@ -91,49 +83,15 @@
           </div>
         </section>
 
-        <section class="card" id="sec-text">
-          <h2><span class="num">03</span> Write something</h2>
-          <textarea id="textInput" rows="2" placeholder="Initials, names, a date, a little phrase…"></textarea>
-          <div class="fonts" id="fontChips"></div>
-          <label class="slider">Size <input type="range" id="textSize" min="6" max="60" step="1"> <output id="textSizeOut"></output></label>
-          <div class="sub">Thread weight</div>
-          <div class="chips" id="weightChips"></div>
-          <div class="sub">Align</div>
-          <div class="chips" id="alignChips"></div>
-          <button class="wide" id="addTextBtn">Add text</button>
-        </section>
-
-        <section class="card" id="sec-motifs">
-          <h2><span class="num">04</span> Add stitched motifs</h2>
-          <p class="hint">Click to add, or drag onto the card.</p>
-          <div class="motif-grid" id="motifGrid"></div>
-          <div class="sub">Frames</div>
-          <div class="motif-grid frames" id="frameGrid"></div>
-          <div class="edit-block" id="motifEdit" hidden>
-            <div class="edit-title">Selected motif</div>
-            <div class="stepper-row">
-              <span>Size</span>
-              <div class="stepper"><button id="scaleDown">−</button><output id="scaleOut">1×</output><button id="scaleUp">+</button></div>
-              <button class="small" id="rotBtn">↻ Rotate</button>
-              <button class="small" id="flipBtn">⇋ Flip</button>
-            </div>
-          </div>
-          <div class="edit-block" id="frameEdit" hidden>
-            <div class="edit-title">Selected frame</div>
-            <div class="chips" id="frameStyleChips"></div>
-            <div class="custom-size">
-              <label>W <input type="number" id="frameCols" min="3" max="300"></label>
-              <span class="x">×</span>
-              <label>H <input type="number" id="frameRows" min="3" max="300"></label>
-              <span class="unit">stitches</span>
-            </div>
-            <button class="small" id="fitFrameBtn">Fit around the card edge</button>
-          </div>
+        <section class="card" id="sec-words">
+          <h2><span class="num">03</span> Your words</h2>
+          <div class="word-fields" id="wordFields"></div>
+          <div class="sub">Lettering</div>
+          <div class="fonts" id="letterChips"></div>
         </section>
 
         <section class="card" id="sec-colors">
-          <h2><span class="num">05</span> Paper &amp; thread</h2>
-          <div class="sub">Looks</div>
+          <h2><span class="num">04</span> Colors</h2>
           <div class="looks" id="lookChips"></div>
           <div class="sub">Paper</div>
           <div class="swatches" id="paperSwatches"></div>
@@ -147,8 +105,23 @@
           <div class="color-row">
             <input type="color" id="threadPick" aria-label="Thread color">
             <input type="text" id="threadHex" maxlength="7" spellcheck="false" aria-label="Thread hex color">
-            <button class="small" id="threadAllBtn">Use on all stitches</button>
+            <button class="small" id="threadAllBtn" hidden>Use on all stitches</button>
           </div>
+        </section>
+
+        <section class="card" id="sec-canvas">
+          <h2><span class="num">05</span> Size &amp; stitch</h2>
+          <div class="chips" id="sizeChips"></div>
+          <div class="custom-size">
+            <label>W <input type="number" id="wIn" min="2" max="16" step="0.25"></label>
+            <span class="x">×</span>
+            <label>H <input type="number" id="hIn" min="2" max="16" step="0.25"></label>
+            <span class="unit">in</span>
+            <button class="small" id="swapBtn" title="Swap portrait / landscape">⇄ Rotate</button>
+          </div>
+          <div class="sub">Hole spacing</div>
+          <div class="chips" id="pitchChips"></div>
+          <p class="hint" id="gridInfo"></p>
         </section>
 
         <section class="card" id="sec-print">
@@ -156,8 +129,55 @@
           <p class="stats" id="stats"></p>
           <button class="dark wide big" id="printBtn">Print punch template</button>
           <button class="wide" id="saveBtn2">Save image</button>
-          <p class="micro">MADE PRIVATELY IN YOUR BROWSER</p>
         </section>
+
+        <details class="card more" id="sec-more">
+          <summary>
+            <span class="more-title">Make it your own</span>
+            <small>add more words, motifs &amp; frames, and arrange them freely</small>
+          </summary>
+
+          <div id="sec-text">
+            <div class="sub">Add words</div>
+            <textarea id="textInput" rows="2" placeholder="Initials, names, a date, a little phrase…"></textarea>
+            <div class="fonts" id="fontChips"></div>
+            <label class="slider">Size <input type="range" id="textSize" min="6" max="160" step="1"> <output id="textSizeOut"></output></label>
+            <div class="sub">Thread weight</div>
+            <div class="chips" id="weightChips"></div>
+            <div class="sub">Align</div>
+            <div class="chips" id="alignChips"></div>
+            <button class="wide" id="addTextBtn">Add text</button>
+          </div>
+
+          <div id="sec-motifs">
+            <div class="sub">Stitched motifs <span class="target">· click or drag onto the card</span></div>
+            <div class="motif-grid" id="motifGrid"></div>
+            <div class="sub">Frames</div>
+            <div class="motif-grid frames" id="frameGrid"></div>
+            <div class="edit-block" id="motifEdit" hidden>
+              <div class="edit-title">Selected motif</div>
+              <div class="stepper-row">
+                <span>Size</span>
+                <div class="stepper"><button id="scaleDown">−</button><output id="scaleOut">1×</output><button id="scaleUp">+</button></div>
+                <button class="small" id="rotBtn">↻ Rotate</button>
+                <button class="small" id="flipBtn">⇋ Flip</button>
+              </div>
+            </div>
+            <div class="edit-block" id="frameEdit" hidden>
+              <div class="edit-title">Selected frame</div>
+              <div class="chips" id="frameStyleChips"></div>
+              <div class="custom-size">
+                <label>W <input type="number" id="frameCols" min="3" max="400"></label>
+                <span class="x">×</span>
+                <label>H <input type="number" id="frameRows" min="3" max="400"></label>
+                <span class="unit">stitches</span>
+              </div>
+              <button class="small" id="fitFrameBtn">Fit around the card edge</button>
+            </div>
+          </div>
+          <button class="link" id="addFrameBtn">Add another photo spot</button>
+        </details>
+        <p class="micro">MADE PRIVATELY IN YOUR BROWSER</p>
       </aside>
     </main>
   </div>
