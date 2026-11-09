@@ -1,0 +1,1339 @@
+import { MOTIFS, FRAMES } from './motifs.js';
+import { FONTS, WEIGHTS, fontCss, fontsChanged, motifPreviewBitmap, framePreviewBitmap } from './stitch.js';
+import { FILTERS, applyFilter } from './filters.js';
+import {
+  drawScene, gridOf, boundsOf, snapStitch, photoGeometry, isStitch, paintStitches, stats, EDGES, filteredImage,
+} from './render.js';
+import { printDesign, printPreview, exportPNG, PAPERS, formatLength, inchLabel } from './print.js';
+
+const $ = (s) => document.querySelector(s);
+const uid = () => Math.random().toString(36).slice(2, 10);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+// ---------------------------------------------------------------- presets
+
+const SIZES = [
+  { w: 3, h: 4, note: 'mini' },
+  { w: 4, h: 6, note: 'postcard' },
+  { w: 5, h: 7, note: 'card' },
+  { w: 6, h: 6, note: 'square' },
+  { w: 8, h: 10, note: 'frame' },
+  { w: 4, h: 11, note: 'long strip' },
+];
+const PITCHES = [
+  { n: 10, name: 'Fine' },
+  { n: 8, name: 'Classic' },
+  { n: 6, name: 'Bold' },
+  { n: 5, name: 'Chunky' },
+];
+const SHAPES = [
+  { id: 'orig', name: 'Original' },
+  { id: '1:1', name: 'Square' },
+  { id: '4:5', name: '4:5' },
+  { id: '3:4', name: '3:4' },
+  { id: '2:3', name: '2:3' },
+  { id: '3:2', name: '3:2' },
+  { id: '16:9', name: 'Wide' },
+];
+const PAPER_COLORS = ['#FBF8F2', '#FFFFFF', '#C9A57D', '#F0D5D1', '#93AFD6', '#C2CBB0', '#F2E3AE', '#5A1A20', '#1F2A44', '#262322'];
+const THREAD_COLORS = ['#C1121F', '#9E1B32', '#6B1E23', '#E79AA6', '#F1E6CF', '#FFFFFF', '#C9A24A', '#1C1A1A', '#23395B', '#5F7A52', '#9A7BC2', '#6FA3D8'];
+const LOOKS = [
+  { name: 'Classic', paper: '#FBF8F2', thread: '#C1121F' },
+  { name: 'Wedding', paper: '#5A1A20', thread: '#F1E6CF' },
+  { name: 'Kraft', paper: '#C9A57D', thread: '#FFFFFF' },
+  { name: 'Blue hour', paper: '#93AFD6', thread: '#FFFFFF' },
+  { name: 'Blush', paper: '#F0D5D1', thread: '#9E1B32' },
+  { name: 'Noir', paper: '#262322', thread: '#E0313F' },
+  { name: 'Garden', paper: '#C2CBB0', thread: '#FBF8F2' },
+  { name: 'Navy & gold', paper: '#1F2A44', thread: '#C9A24A' },
+];
+
+// ---------------------------------------------------------------- state
+
+const STORE = 'stitched:v1';
+const images = new Map(); // id -> { src, img, w, h }
+let doc = null;
+let selectedId = null;
+let cropId = null;
+let hoverId = null;
+const view = { zoom: 1, mode: 'real', grid: false };
+const prefs = { thread: '#C1121F', font: 'vibes', size: 14, weight: 0, align: 'center', draft: '' };
+const printOpts = {
+  paper: /^en-(US|CA)|^es-(MX|US)/.test(navigator.language || '') ? 'letter' : 'a4',
+  holes: true, photos: true, guide: false, paperFill: false, trim: true, chart: true,
+};
+
+const byId = (id) => doc.elements.find((e) => e.id === id);
+const selected = () => (selectedId ? byId(selectedId) : null);
+
+function textEl(text, extra = {}) {
+  return {
+    id: uid(), type: 'text', text, font: prefs.font, size: prefs.size, weight: prefs.weight,
+    align: prefs.align, color: prefs.thread, x: 0, y: 0, ...extra,
+  };
+}
+
+function starterDoc() {
+  const d = { w: 8, h: 10, pitch: 1 / 8, paper: '#FBF8F2', grain: true, elements: [] };
+  d.elements.push({
+    id: uid(), type: 'photo', imgId: null, x: 2.1, y: 2.7, w: 3.8, h: 4.6,
+    zoom: 1, panX: 0, panY: 0, filter: 'classic', edge: 'none', brightness: 0, contrast: 0,
+  });
+  d.elements.push(textEl('how lucky', { size: 14, x: 4, y: 0.55, center: true }));
+  d.elements.push(textEl('are we', { size: 14, x: 4, y: 7.75, center: true }));
+  d.elements.push({ id: uid(), type: 'motif', motif: 'mini-hearts', scale: 1, rot: 0, flip: false, color: prefs.thread, x: 6.75, y: 3.0, center: true });
+  return d;
+}
+
+/** Elements flagged `center` were placed by their center point; resolve that once bitmaps exist. */
+function resolveCenters() {
+  for (const el of doc.elements) {
+    if (!el.center) continue;
+    const b = boundsOf(doc, el);
+    el.x -= b.w / 2;
+    delete el.center;
+    snapStitch(doc, el);
+  }
+}
+
+// ---------------------------------------------------------------- history & storage
+
+const history = { stack: [], index: -1 };
+const snapshot = () => JSON.stringify(doc);
+
+function commit() {
+  clearTimeout(commitTimer);
+  commitTimer = 0;
+  const s = snapshot();
+  if (history.stack[history.index] === s) return;
+  history.stack = history.stack.slice(0, history.index + 1);
+  history.stack.push(s);
+  if (history.stack.length > 100) history.stack.shift();
+  history.index = history.stack.length - 1;
+  persist();
+  sync();
+}
+let commitTimer = 0;
+function commitSoon(ms = 500) {
+  clearTimeout(commitTimer);
+  commitTimer = setTimeout(() => { commitTimer = 0; commit(); }, ms);
+}
+function restore(i) {
+  history.index = i;
+  doc = JSON.parse(history.stack[i]);
+  if (selectedId && !byId(selectedId)) selectedId = null;
+  if (cropId && !byId(cropId)) cropId = null;
+  persist();
+  sync();
+  render();
+}
+const undo = () => history.index > 0 && restore(history.index - 1);
+const redo = () => history.index < history.stack.length - 1 && restore(history.index + 1);
+
+let persistTimer = 0, warnedStorage = false;
+function persist() {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    const used = {};
+    for (const el of doc.elements) {
+      if (el.type === 'photo' && el.imgId && images.has(el.imgId)) used[el.imgId] = images.get(el.imgId).src;
+    }
+    try {
+      localStorage.setItem(STORE, JSON.stringify({ doc, images: used }));
+    } catch {
+      try {
+        localStorage.setItem(STORE, JSON.stringify({ doc, images: {} }));
+      } catch { /* storage unavailable */ }
+      if (!warnedStorage) {
+        warnedStorage = true;
+        toast('Your photos are too large to keep after a refresh. The rest of the design is saved.');
+      }
+    }
+  }, 400);
+}
+
+function loadImage(src) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+
+async function registerImage(id, src) {
+  const img = await loadImage(src);
+  images.set(id, { src, img, w: img.naturalWidth, h: img.naturalHeight });
+  return id;
+}
+
+function loadSaved() {
+  try {
+    const raw = localStorage.getItem(STORE);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data?.doc?.elements) return false;
+    doc = data.doc;
+    for (const [id, src] of Object.entries(data.images || {})) {
+      registerImage(id, src).then(() => { render(); sync(); }).catch(() => {});
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------- canvas view
+
+const canvas = $('#canvas');
+const ctx = canvas.getContext('2d');
+const scroller = $('#stageScroll');
+const V = { ppi: 60, ox: 0, oy: 0, cssW: 0, cssH: 0, dpr: 1 };
+
+function layout() {
+  const narrow = scroller.clientWidth < 600;
+  const pad = narrow ? 18 : 44;
+  const availW = scroller.clientWidth, availH = scroller.clientHeight;
+  const fit = Math.max(10, Math.min((availW - pad * 2) / doc.w, (availH - pad * 2) / doc.h));
+  V.ppi = fit * view.zoom;
+  const cssW = Math.max(availW, Math.ceil(doc.w * V.ppi + pad * 2));
+  const cssH = Math.max(availH, Math.ceil(doc.h * V.ppi + pad * 2));
+  V.ox = Math.round((cssW - doc.w * V.ppi) / 2);
+  V.oy = Math.round((cssH - doc.h * V.ppi) / 2);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  if (cssW !== V.cssW || cssH !== V.cssH || dpr !== V.dpr) {
+    V.cssW = cssW; V.cssH = cssH; V.dpr = dpr;
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = `${cssW}px`;
+    canvas.style.height = `${cssH}px`;
+  }
+}
+
+let frame = 0;
+function render() {
+  if (frame) return;
+  frame = requestAnimationFrame(() => {
+    frame = 0;
+    draw();
+  });
+}
+
+function handlesFor(el) {
+  if (el.type === 'photo' || el.type === 'frame') return ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+  return ['nw', 'ne', 'se', 'sw'];
+}
+function handlePoint(b, h) {
+  const x = h.includes('w') ? b.x : h.includes('e') ? b.x + b.w : b.x + b.w / 2;
+  const y = h.includes('n') ? b.y : h.includes('s') ? b.y + b.h : b.y + b.h / 2;
+  return [x, y];
+}
+const toScreen = (b) => ({ x: V.ox + b.x * V.ppi, y: V.oy + b.y * V.ppi, w: b.w * V.ppi, h: b.h * V.ppi });
+
+function draw() {
+  layout();
+  ctx.setTransform(V.dpr, 0, 0, V.dpr, 0, 0);
+  ctx.clearRect(0, 0, V.cssW, V.cssH);
+  ctx.save();
+  ctx.shadowColor = 'rgba(50,30,20,0.22)';
+  ctx.shadowBlur = 28;
+  ctx.shadowOffsetY = 10;
+  ctx.fillStyle = doc.paper;
+  ctx.fillRect(V.ox, V.oy, doc.w * V.ppi, doc.h * V.ppi);
+  ctx.restore();
+
+  drawScene(ctx, doc, images, {
+    ppi: V.ppi, ox: V.ox, oy: V.oy,
+    stitches: view.mode === 'real' ? 'real' : 'light',
+    holes: view.mode === 'pattern',
+    grid: view.grid,
+    photos: true, paperFill: true, grain: true, placeholders: 'editor', shadows: true, ghostOutside: true,
+  });
+
+  const crop = cropId && byId(cropId);
+  if (crop && images.get(crop.imgId)) {
+    const image = images.get(crop.imgId);
+    const geo = photoGeometry(crop, image);
+    const d = toScreen(geo.draw), inner = toScreen(geo.inner);
+    const src = filteredImage(crop, image);
+    ctx.save();
+    ctx.globalAlpha = 0.38;
+    ctx.drawImage(src, d.x, d.y, d.w, d.h);
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.rect(inner.x, inner.y, inner.w, inner.h);
+    ctx.clip();
+    ctx.drawImage(src, d.x, d.y, d.w, d.h);
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(inner.x, inner.y, inner.w, inner.h);
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = '#a8322e';
+    ctx.strokeRect(inner.x, inner.y, inner.w, inner.h);
+    ctx.restore();
+    return;
+  }
+
+  const hov = hoverId && hoverId !== selectedId && byId(hoverId);
+  if (hov) {
+    const r = toScreen(boundsOf(doc, hov));
+    ctx.save();
+    ctx.strokeStyle = 'rgba(168,50,46,0.55)';
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(r.x - 2.5, r.y - 2.5, r.w + 5, r.h + 5);
+    ctx.restore();
+  }
+  const sel = selected();
+  if (sel) {
+    const b = boundsOf(doc, sel);
+    const r = toScreen(b);
+    ctx.save();
+    ctx.strokeStyle = '#a8322e';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(r.x - 3, r.y - 3, r.w + 6, r.h + 6);
+    const pad = { x: b.x - 3 / V.ppi, y: b.y - 3 / V.ppi, w: b.w + 6 / V.ppi, h: b.h + 6 / V.ppi };
+    for (const h of handlesFor(sel)) {
+      const [hx, hy] = handlePoint(pad, h);
+      const sx = V.ox + hx * V.ppi, sy = V.oy + hy * V.ppi;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      if (h.length === 2) ctx.arc(sx, sy, 5.5, 0, Math.PI * 2);
+      else ctx.roundRect ? ctx.roundRect(sx - 7, sy - 3.5, 14, 7, 3.5) : ctx.rect(sx - 7, sy - 3.5, 14, 7);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+new ResizeObserver(() => render()).observe(scroller);
+
+// ---------------------------------------------------------------- hit testing & pointer
+
+function pointerInches(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left - V.ox) / V.ppi, y: (e.clientY - r.top - V.oy) / V.ppi, sx: e.clientX - r.left, sy: e.clientY - r.top };
+}
+const inside = (p, b, slop = 0) => p.x >= b.x - slop && p.x <= b.x + b.w + slop && p.y >= b.y - slop && p.y <= b.y + b.h + slop;
+
+function hitTest(p) {
+  for (let i = doc.elements.length - 1; i >= 0; i--) {
+    const el = doc.elements[i];
+    if (inside(p, boundsOf(doc, el), 2 / V.ppi)) return el;
+  }
+  return null;
+}
+
+function hitHandle(p, el, touch) {
+  const b = boundsOf(doc, el);
+  const pad = { x: b.x - 3 / V.ppi, y: b.y - 3 / V.ppi, w: b.w + 6 / V.ppi, h: b.h + 6 / V.ppi };
+  const tol = (touch ? 16 : 9) / V.ppi;
+  for (const h of handlesFor(el)) {
+    const [hx, hy] = handlePoint(pad, h);
+    if (Math.abs(p.x - hx) <= tol && Math.abs(p.y - hy) <= tol) return h;
+  }
+  return null;
+}
+
+const CURSORS = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' };
+let drag = null;
+let lastTap = { id: null, t: 0 };
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  canvas.focus({ preventScroll: true });
+  const p = pointerInches(e);
+  const touch = e.pointerType !== 'mouse';
+  if (cropId) {
+    const el = byId(cropId);
+    if (el && inside(p, boundsOf(doc, el))) {
+      drag = { kind: 'pan', id: el.id, start: p, orig: { ...el }, moved: false };
+      canvas.setPointerCapture(e.pointerId);
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
+    exitCrop();
+  }
+  const sel = selected();
+  const h = sel && hitHandle(p, sel, touch);
+  if (h) {
+    drag = { kind: 'resize', id: sel.id, handle: h, start: p, orig: JSON.parse(JSON.stringify(sel)), b0: boundsOf(doc, sel), moved: false };
+  } else {
+    const hit = hitTest(p);
+    // double-tap on touch screens (dblclick isn't reliable with touch-action: none)
+    const now = performance.now();
+    if (touch && hit && lastTap.id === hit.id && now - lastTap.t < 350) {
+      lastTap = { id: null, t: 0 };
+      openElement(hit);
+      render();
+      return;
+    }
+    lastTap = { id: hit ? hit.id : null, t: now };
+    select(hit ? hit.id : null);
+    if (hit) drag = { kind: 'move', id: hit.id, start: p, orig: { x: hit.x, y: hit.y }, moved: false };
+  }
+  if (drag) canvas.setPointerCapture(e.pointerId);
+  render();
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  const p = pointerInches(e);
+  if (!drag) {
+    if (e.pointerType !== 'mouse') return;
+    if (cropId) {
+      canvas.style.cursor = inside(p, boundsOf(doc, byId(cropId))) ? 'grab' : 'default';
+      return;
+    }
+    const sel = selected();
+    const h = sel && hitHandle(p, sel, false);
+    const hit = h ? null : hitTest(p);
+    canvas.style.cursor = h ? CURSORS[h] : hit ? 'move' : 'default';
+    const nh = hit ? hit.id : null;
+    if (nh !== hoverId) { hoverId = nh; render(); }
+    return;
+  }
+  const el = byId(drag.id);
+  if (!el) return;
+  const dx = p.x - drag.start.x, dy = p.y - drag.start.y;
+  if (!drag.moved && Math.hypot(dx, dy) * V.ppi < 2) return;
+  drag.moved = true;
+  if (drag.kind === 'move') {
+    el.x = drag.orig.x + dx;
+    el.y = drag.orig.y + dy;
+  } else if (drag.kind === 'pan') {
+    const geo = photoGeometry(drag.orig, images.get(el.imgId));
+    if (geo.ovX > 0.001) el.panX = clamp(drag.orig.panX + (2 * dx) / geo.ovX, -1, 1);
+    if (geo.ovY > 0.001) el.panY = clamp(drag.orig.panY + (2 * dy) / geo.ovY, -1, 1);
+  } else if (drag.kind === 'resize') {
+    resize(el, drag, p);
+  }
+  render();
+  syncLive();
+});
+
+function endDrag() {
+  if (!drag) return;
+  const el = byId(drag.id);
+  if (drag.moved && el) {
+    if (isStitch(el)) snapStitch(doc, el);
+    commit();
+  }
+  canvas.style.cursor = drag.kind === 'pan' ? 'grab' : 'default';
+  drag = null;
+  render();
+}
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('pointerleave', () => { if (hoverId && !drag) { hoverId = null; render(); } });
+
+function resize(el, d, p) {
+  const { b0, orig, handle: h } = d;
+  const hx = h.includes('w') ? -1 : h.includes('e') ? 1 : 0;
+  const hy = h.includes('n') ? -1 : h.includes('s') ? 1 : 0;
+  const L = b0.x, T = b0.y, R = b0.x + b0.w, B = b0.y + b0.h;
+  const ax = hx < 0 ? R : L, ay = hy < 0 ? B : T;
+  const corner = hx !== 0 && hy !== 0;
+  const g = gridOf(doc);
+
+  if (el.type === 'photo') {
+    if (corner) {
+      const f = Math.max(Math.abs(p.x - ax) / b0.w, Math.abs(p.y - ay) / b0.h, 0.4 / Math.min(b0.w, b0.h));
+      el.w = b0.w * f; el.h = b0.h * f;
+    } else if (hx) {
+      el.w = Math.max(0.4, hx > 0 ? p.x - L : R - p.x);
+    } else {
+      el.h = Math.max(0.4, hy > 0 ? p.y - T : B - p.y);
+    }
+    el.x = hx < 0 ? R - el.w : hx > 0 ? L : el.x;
+    el.y = hy < 0 ? B - el.h : hy > 0 ? T : el.y;
+    return;
+  }
+  if (el.type === 'frame') {
+    if (hx) el.cols = Math.max(3, Math.round((hx > 0 ? p.x - L : R - p.x) / g.p));
+    if (hy) el.rows = Math.max(3, Math.round((hy > 0 ? p.y - T : B - p.y) / g.p));
+    el.x = hx < 0 ? R - el.cols * g.p : L;
+    el.y = hy < 0 ? B - el.rows * g.p : T;
+    return;
+  }
+  const f = Math.max(Math.abs(p.x - ax) / b0.w, Math.abs(p.y - ay) / b0.h);
+  if (el.type === 'text') el.size = clamp(Math.round(orig.size * f), 5, 160);
+  if (el.type === 'motif') el.scale = clamp(Math.round(orig.scale * f), 1, 10);
+  const b = boundsOf(doc, el);
+  el.x = hx < 0 ? R - b.w : L;
+  el.y = hy < 0 ? B - b.h : T;
+}
+
+canvas.addEventListener('dblclick', (e) => openElement(hitTest(pointerInches(e))));
+
+function openElement(hit) {
+  if (!hit) return;
+  if (hit.type === 'photo') {
+    if (!images.get(hit.imgId)) pickFiles(hit.id);
+    else enterCrop(hit.id);
+  } else if (hit.type === 'text') {
+    const ta = $('#textInput');
+    ta.focus();
+    ta.select();
+    $('#sec-text').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+canvas.addEventListener('wheel', (e) => {
+  if (!cropId) return;
+  const el = byId(cropId);
+  if (!el) return;
+  e.preventDefault();
+  el.zoom = clamp((el.zoom || 1) * Math.exp(-e.deltaY * 0.0015), 1, 4);
+  render();
+  syncLive();
+  commitSoon();
+}, { passive: false });
+
+// ---------------------------------------------------------------- selection & element ops
+
+function select(id) {
+  if (id === selectedId) return;
+  selectedId = id;
+  if (cropId && cropId !== id) cropId = null;
+  sync();
+  const el = selected();
+  if (el && window.matchMedia('(min-width: 961px)').matches) {
+    const sec = el.type === 'photo' ? '#sec-photos' : el.type === 'text' ? '#sec-text' : '#sec-motifs';
+    const target = el.type === 'photo' ? '#photoEdit' : el.type === 'motif' ? '#motifEdit' : el.type === 'frame' ? '#frameEdit' : sec;
+    $(target).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function enterCrop(id) {
+  const el = byId(id);
+  if (!el || !images.get(el.imgId)) return;
+  cropId = id;
+  selectedId = id;
+  canvas.style.cursor = 'grab';
+  sync();
+  render();
+}
+function exitCrop() {
+  cropId = null;
+  canvas.style.cursor = 'default';
+  commit();
+  render();
+}
+
+function addElement(el, { at, index } = {}) {
+  if (at) placeAt(el, at.x, at.y);
+  if (index === undefined) doc.elements.push(el);
+  else doc.elements.splice(index, 0, el);
+  selectedId = null;
+  select(el.id);
+  commit();
+  render();
+  // On phones the panel sits below the card; bring the card back into view.
+  if (window.matchMedia('(max-width: 960px)').matches) {
+    $('.stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function placeAt(el, cx, cy) {
+  const b = boundsOf(doc, el);
+  el.x += cx - (b.x + b.w / 2);
+  el.y += cy - (b.y + b.h / 2);
+  if (isStitch(el)) snapStitch(doc, el);
+}
+
+let stagger = 0;
+function nextSpot() {
+  const off = ((stagger++ % 5) - 2) * 0.18;
+  return { x: doc.w / 2 + off, y: doc.h / 2 + off };
+}
+
+/** Change a text element while keeping it anchored per its alignment. */
+function keepAnchor(el, fn) {
+  const b0 = boundsOf(doc, el);
+  fn();
+  const b1 = boundsOf(doc, el);
+  const anchor = el.type === 'text' ? el.align : 'center';
+  if (anchor === 'center') el.x += b0.x + b0.w / 2 - (b1.x + b1.w / 2);
+  else if (anchor === 'right') el.x += b0.x + b0.w - (b1.x + b1.w);
+  else el.x += b0.x - b1.x;
+  if (el.type !== 'text') el.y += b0.y + b0.h / 2 - (b1.y + b1.h / 2);
+  if (isStitch(el)) snapStitch(doc, el);
+}
+
+function removeSelected() {
+  const el = selected();
+  if (!el) return;
+  doc.elements = doc.elements.filter((e) => e.id !== el.id);
+  selectedId = null;
+  cropId = null;
+  commit();
+  render();
+}
+function duplicateSelected() {
+  const el = selected();
+  if (!el) return;
+  const copy = { ...JSON.parse(JSON.stringify(el)), id: uid() };
+  const g = gridOf(doc);
+  copy.x += g.p * 3;
+  copy.y += g.p * 3;
+  const i = doc.elements.indexOf(el);
+  addElement(copy, { index: i + 1 });
+}
+function moveLayer(dir) {
+  const el = selected();
+  if (!el) return;
+  const i = doc.elements.indexOf(el), j = i + dir;
+  if (j < 0 || j >= doc.elements.length) return;
+  [doc.elements[i], doc.elements[j]] = [doc.elements[j], doc.elements[i]];
+  commit();
+  render();
+}
+
+// ---------------------------------------------------------------- photos
+
+const fileInput = $('#fileInput');
+let fileTarget = null;
+function pickFiles(targetId = null) {
+  fileTarget = targetId;
+  fileInput.value = '';
+  fileInput.click();
+}
+fileInput.addEventListener('change', () => {
+  const files = [...fileInput.files];
+  addPhotos(files, null, fileTarget);
+  fileTarget = null;
+});
+
+async function prepareImage(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(url);
+    const max = 2000;
+    const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * s);
+    c.height = Math.round(img.naturalHeight * s);
+    const g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(img, 0, 0, c.width, c.height);
+    const id = uid();
+    await registerImage(id, c.toDataURL('image/jpeg', 0.88));
+    return id;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function addPhotos(files, at, targetId) {
+  const list = files.filter((f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic|avif)$/i.test(f.name));
+  if (!list.length) return;
+  let target = targetId ? byId(targetId) : null;
+  if (!target) {
+    const sel = selected();
+    if (sel?.type === 'photo' && !images.get(sel.imgId) && !at) target = sel;
+  }
+  if (!target) target = doc.elements.find((e) => e.type === 'photo' && !images.get(e.imgId) && (!at || inside(at, e)));
+  if (target && at && !inside(at, target)) target = null;
+  for (const [i, file] of list.entries()) {
+    let id;
+    try {
+      id = await prepareImage(file);
+    } catch {
+      toast(`Couldn't open ${file.name}. Try a JPG or PNG.`);
+      continue;
+    }
+    const info = images.get(id);
+    if (target && i === 0) {
+      Object.assign(target, { imgId: id, zoom: 1, panX: 0, panY: 0 });
+      selectedId = null;
+      select(target.id);
+      commit();
+      render();
+      continue;
+    }
+    const aspect = info.w / info.h;
+    let w = Math.min(doc.w * 0.6, doc.h * 0.6 * aspect);
+    let h = w / aspect;
+    const spot = at ? { x: at.x + i * 0.25, y: at.y + i * 0.25 } : nextSpot();
+    const el = {
+      id: uid(), type: 'photo', imgId: id, x: spot.x - w / 2, y: spot.y - h / 2, w, h,
+      zoom: 1, panX: 0, panY: 0, filter: 'classic', edge: 'none', brightness: 0, contrast: 0,
+    };
+    // Photos sit under the stitching, so slot them in after the last photo.
+    let idx = 0;
+    doc.elements.forEach((e, k) => { if (e.type === 'photo') idx = k + 1; });
+    addElement(el, { index: idx });
+  }
+}
+
+function setShape(el, shapeId) {
+  const image = images.get(el.imgId);
+  let ratio;
+  if (shapeId === 'orig') ratio = image ? image.w / image.h : el.w / el.h;
+  else {
+    const [a, b] = shapeId.split(':').map(Number);
+    ratio = a / b;
+  }
+  const cx = el.x + el.w / 2, cy = el.y + el.h / 2;
+  const area = el.w * el.h;
+  let w = Math.sqrt(area * ratio), h = w / ratio;
+  const fit = Math.min(1, (doc.w * 0.95) / w, (doc.h * 0.95) / h);
+  w *= fit; h *= fit;
+  Object.assign(el, { w, h, x: cx - w / 2, y: cy - h / 2, panX: 0, panY: 0 });
+}
+
+function currentShape(el) {
+  const r = el.w / el.h;
+  const image = images.get(el.imgId);
+  if (image && Math.abs(r - image.w / image.h) < 0.01) return 'orig';
+  const s = SHAPES.find((x) => x.id !== 'orig' && Math.abs(r - x.id.split(':')[0] / x.id.split(':')[1]) < 0.01);
+  return s ? s.id : null;
+}
+
+// drag & drop onto the stage
+let dragDepth = 0;
+const dropHint = $('#dropHint');
+const acceptsDrop = (e) => [...e.dataTransfer.types].some((t) => t === 'Files' || t === 'text/x-stitch');
+scroller.addEventListener('dragenter', (e) => {
+  if (!acceptsDrop(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  dropHint.hidden = false;
+});
+scroller.addEventListener('dragover', (e) => {
+  if (!acceptsDrop(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+scroller.addEventListener('dragleave', () => {
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) dropHint.hidden = true;
+});
+scroller.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  dropHint.hidden = true;
+  const p = pointerInches(e);
+  const stitch = e.dataTransfer.getData('text/x-stitch');
+  if (stitch) {
+    const d = JSON.parse(stitch);
+    addElement(d.kind === 'frame' ? frameEl(d.id) : motifEl(d.id), { at: p });
+    return;
+  }
+  if (e.dataTransfer.files?.length) addPhotos([...e.dataTransfer.files], p);
+});
+// stop the browser from opening files dropped elsewhere on the page
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => e.preventDefault());
+
+// ---------------------------------------------------------------- motifs & frames
+
+function motifEl(id) {
+  return { id: uid(), type: 'motif', motif: id, scale: 1, rot: 0, flip: false, color: prefs.thread, x: 0, y: 0 };
+}
+function frameEl(style) {
+  const g = gridOf(doc);
+  return {
+    id: uid(), type: 'frame', style, cols: Math.max(3, g.cols - 4), rows: Math.max(3, g.rows - 4),
+    color: prefs.thread, x: g.gx + 2 * g.p, y: g.gy + 2 * g.p,
+  };
+}
+
+function drawPreview(cv, bm, color = '#b3202a') {
+  const dpr = window.devicePixelRatio || 1;
+  const size = 46;
+  cv.width = cv.height = size * dpr;
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const s = Math.min((size - 4) / bm.w, (size - 4) / bm.h);
+  paintStitches(c, bm, (size - bm.w * s) / 2, (size - bm.h * s) / 2, s, color, 'real');
+}
+
+function buildMotifs() {
+  const grid = $('#motifGrid');
+  for (const m of MOTIFS) {
+    const b = document.createElement('button');
+    b.className = 'motif';
+    b.draggable = true;
+    b.title = `Add ${m.name.toLowerCase()}`;
+    const cv = document.createElement('canvas');
+    drawPreview(cv, motifPreviewBitmap(m.id));
+    b.append(cv, Object.assign(document.createElement('span'), { textContent: m.name }));
+    b.addEventListener('click', () => addElement(motifEl(m.id), { at: nextSpot() }));
+    b.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/x-stitch', JSON.stringify({ kind: 'motif', id: m.id })));
+    grid.appendChild(b);
+  }
+  const fgrid = $('#frameGrid');
+  for (const f of FRAMES) {
+    const b = document.createElement('button');
+    b.className = 'motif';
+    b.draggable = true;
+    b.title = `Add ${f.name.toLowerCase()} frame`;
+    const cv = document.createElement('canvas');
+    drawPreview(cv, framePreviewBitmap(f.id));
+    b.append(cv, Object.assign(document.createElement('span'), { textContent: f.name }));
+    b.addEventListener('click', () => addElement(frameEl(f.id)));
+    b.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/x-stitch', JSON.stringify({ kind: 'frame', id: f.id })));
+    fgrid.appendChild(b);
+  }
+}
+
+// ---------------------------------------------------------------- panel UI
+
+function chips(container, items, { onClick, solid = false } = {}) {
+  container.innerHTML = '';
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `chip${solid ? ' solid' : ''}`;
+    b.dataset.id = it.id;
+    b.innerHTML = it.html ?? it.name;
+    b.addEventListener('click', () => onClick(it.id));
+    container.appendChild(b);
+  }
+}
+const setOn = (container, id) => container.querySelectorAll('[data-id]').forEach((b) => b.classList.toggle('on', b.dataset.id === String(id)));
+
+function swatches(container, colors, onClick) {
+  container.innerHTML = '';
+  for (const c of colors) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'swatch';
+    b.dataset.id = c;
+    b.style.background = c;
+    b.title = c;
+    b.addEventListener('click', () => onClick(c));
+    container.appendChild(b);
+  }
+}
+
+function setCanvasSize(w, h) {
+  w = clamp(+w || doc.w, 2, 16);
+  h = clamp(+h || doc.h, 2, 16);
+  const fx = w / doc.w, fy = h / doc.h;
+  for (const el of doc.elements) {
+    const b = boundsOf(doc, el);
+    const cx = (b.x + b.w / 2) * fx, cy = (b.y + b.h / 2) * fy;
+    if (el.type === 'photo') {
+      const shrink = Math.min(1, (w * 0.95) / el.w, (h * 0.95) / el.h);
+      el.w *= shrink; el.h *= shrink;
+    }
+    el._c = [cx, cy];
+  }
+  doc.w = w; doc.h = h;
+  for (const el of doc.elements) {
+    if (el.type === 'frame') {
+      const g = gridOf(doc);
+      el.cols = Math.max(3, Math.round(el.cols * fx));
+      el.rows = Math.max(3, Math.round(el.rows * fy));
+      el.cols = Math.min(el.cols, g.cols);
+      el.rows = Math.min(el.rows, g.rows);
+    }
+    placeAt(el, ...el._c);
+    delete el._c;
+  }
+  commit();
+  render();
+}
+
+function setPitch(n) {
+  const p = 1 / n;
+  if (Math.abs(doc.pitch - p) < 1e-9) return;
+  const centers = doc.elements.map((el) => {
+    const b = boundsOf(doc, el);
+    return [b.x + b.w / 2, b.y + b.h / 2];
+  });
+  const ratio = doc.pitch / p;
+  doc.pitch = p;
+  doc.elements.forEach((el, i) => {
+    if (el.type === 'frame') {
+      const g = gridOf(doc);
+      el.cols = Math.min(g.cols, Math.max(3, Math.round(el.cols * ratio)));
+      el.rows = Math.min(g.rows, Math.max(3, Math.round(el.rows * ratio)));
+    }
+    placeAt(el, ...centers[i]);
+  });
+  commit();
+  render();
+}
+
+function updateSelected(fn, { anchor = false, live = false } = {}) {
+  const el = selected();
+  if (!el) return false;
+  if (anchor) keepAnchor(el, () => fn(el));
+  else fn(el);
+  render();
+  if (live) { syncLive(); commitSoon(); } else commit();
+  return true;
+}
+
+function setThread(c) {
+  prefs.thread = c;
+  const el = selected();
+  if (el && isStitch(el)) { el.color = c; commit(); render(); } else sync();
+}
+
+function buildPanel() {
+  // 01 canvas
+  chips($('#sizeChips'), SIZES.map((s) => ({ id: `${s.w}x${s.h}`, html: `${s.w} × ${s.h}″<small>${s.note}</small>` })), {
+    onClick: (id) => {
+      const [a, b] = id.split('x').map(Number);
+      const landscape = doc.w > doc.h;
+      setCanvasSize(landscape ? Math.max(a, b) : Math.min(a, b), landscape ? Math.min(a, b) : Math.max(a, b));
+    },
+  });
+  $('#wIn').addEventListener('change', (e) => setCanvasSize(e.target.value, doc.h));
+  $('#hIn').addEventListener('change', (e) => setCanvasSize(doc.w, e.target.value));
+  $('#swapBtn').addEventListener('click', () => setCanvasSize(doc.h, doc.w));
+  chips($('#pitchChips'), PITCHES.map((p) => ({ id: p.n, html: `${p.name}<small>${p.n}/in · ${(25.4 / p.n).toFixed(1)} mm</small>` })), {
+    onClick: (n) => setPitch(+n),
+  });
+
+  // 02 photos
+  $('#uploadBtn').addEventListener('click', () => pickFiles());
+  $('#addFrameBtn').addEventListener('click', () => {
+    const w = Math.min(doc.w * 0.55, 3), h = w * 1.2;
+    const spot = nextSpot();
+    addElement({
+      id: uid(), type: 'photo', imgId: null, x: spot.x - w / 2, y: spot.y - h / 2, w, h,
+      zoom: 1, panX: 0, panY: 0, filter: 'classic', edge: 'none', brightness: 0, contrast: 0,
+    }, { index: 0 });
+  });
+  chips($('#shapeChips'), SHAPES, { onClick: (id) => updateSelected((el) => setShape(el, id)) });
+  chips($('#edgeChips'), EDGES, { onClick: (id) => updateSelected((el) => { el.edge = id; }) });
+  $('#photoZoom').addEventListener('input', (e) => updateSelected((el) => { el.zoom = +e.target.value; }, { live: true }));
+  $('#photoBri').addEventListener('input', (e) => updateSelected((el) => { el.brightness = +e.target.value; }, { live: true }));
+  $('#photoCon').addEventListener('input', (e) => updateSelected((el) => { el.contrast = +e.target.value; }, { live: true }));
+  $('#cropBtn').addEventListener('click', () => (cropId ? exitCrop() : enterCrop(selectedId)));
+  $('#replaceBtn').addEventListener('click', () => pickFiles(selectedId));
+
+  // 03 text
+  const fontBox = $('#fontChips');
+  for (const f of FONTS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'font-chip';
+    b.dataset.id = f.id;
+    const sample = document.createElement('span');
+    sample.className = 'sample';
+    sample.textContent = 'love';
+    sample.style.font = fontCss(f, 22);
+    b.append(sample, Object.assign(document.createElement('small'), { textContent: f.name }));
+    b.addEventListener('click', () => {
+      prefs.font = f.id;
+      if (!updateSelected((el) => { if (el.type === 'text') el.font = f.id; }, { anchor: true })) sync();
+    });
+    fontBox.appendChild(b);
+  }
+  const ta = $('#textInput');
+  ta.addEventListener('input', () => {
+    const el = selected();
+    if (el?.type === 'text') {
+      keepAnchor(el, () => { el.text = ta.value; });
+      render();
+      syncLive();
+      commitSoon(700);
+    } else {
+      prefs.draft = ta.value;
+    }
+  });
+  $('#textSize').addEventListener('input', (e) => {
+    prefs.size = +e.target.value;
+    const el = selected();
+    if (el?.type === 'text') updateSelected((x) => { x.size = prefs.size; }, { anchor: true, live: true });
+    else syncLive();
+  });
+  chips($('#weightChips'), WEIGHTS, {
+    onClick: (id) => {
+      prefs.weight = +id;
+      if (!updateSelected((el) => { if (el.type === 'text') el.weight = +id; }, { anchor: true })) sync();
+    },
+  });
+  chips($('#alignChips'), [{ id: 'left', name: 'Left' }, { id: 'center', name: 'Center' }, { id: 'right', name: 'Right' }], {
+    onClick: (id) => {
+      prefs.align = id;
+      const el = selected();
+      if (el?.type === 'text') {
+        // re-align lines inside the block but keep the block where it is
+        const b0 = boundsOf(doc, el);
+        el.align = id;
+        const b1 = boundsOf(doc, el);
+        el.x += b0.x - b1.x;
+        snapStitch(doc, el);
+        commit();
+        render();
+      } else sync();
+    },
+  });
+  $('#addTextBtn').addEventListener('click', () => {
+    const text = ta.value.trim() || 'love';
+    prefs.draft = '';
+    addElement(textEl(text), { at: nextSpot() });
+  });
+
+  // 04 motifs
+  buildMotifs();
+  const scaleBy = (d) => updateSelected((el) => { el.scale = clamp((el.scale || 1) + d, 1, 10); }, { anchor: true });
+  $('#scaleDown').addEventListener('click', () => scaleBy(-1));
+  $('#scaleUp').addEventListener('click', () => scaleBy(1));
+  $('#rotBtn').addEventListener('click', () => updateSelected((el) => { el.rot = ((el.rot || 0) + 1) % 4; }, { anchor: true }));
+  $('#flipBtn').addEventListener('click', () => updateSelected((el) => { el.flip = !el.flip; }, { anchor: true }));
+  chips($('#frameStyleChips'), FRAMES, { onClick: (id) => updateSelected((el) => { el.style = id; }) });
+  $('#frameCols').addEventListener('change', (e) => updateSelected((el) => { el.cols = clamp(Math.round(+e.target.value) || el.cols, 3, 400); }));
+  $('#frameRows').addEventListener('change', (e) => updateSelected((el) => { el.rows = clamp(Math.round(+e.target.value) || el.rows, 3, 400); }));
+  $('#fitFrameBtn').addEventListener('click', () => updateSelected((el) => {
+    const f = frameEl(el.style);
+    Object.assign(el, { cols: f.cols, rows: f.rows, x: f.x, y: f.y });
+  }));
+
+  // 05 colors
+  const looks = $('#lookChips');
+  for (const l of LOOKS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'look';
+    b.innerHTML = `<div class="look-swatch" style="background:${l.paper};color:${l.thread}">✕✕</div><span>${l.name}</span>`;
+    b.addEventListener('click', () => {
+      doc.paper = l.paper;
+      prefs.thread = l.thread;
+      for (const el of doc.elements) if (isStitch(el)) el.color = l.thread;
+      commit();
+      render();
+    });
+    looks.appendChild(b);
+  }
+  swatches($('#paperSwatches'), PAPER_COLORS, (c) => { doc.paper = c; commit(); render(); });
+  swatches($('#threadSwatches'), THREAD_COLORS, setThread);
+  const hexOk = (v) => /^#?[0-9a-f]{6}$/i.test(v.trim());
+  const norm = (v) => `#${v.trim().replace('#', '').toUpperCase()}`;
+  $('#paperPick').addEventListener('input', (e) => { doc.paper = e.target.value.toUpperCase(); render(); syncLive(); commitSoon(); });
+  $('#paperHex').addEventListener('change', (e) => { if (hexOk(e.target.value)) { doc.paper = norm(e.target.value); commit(); render(); } else sync(); });
+  $('#grainToggle').addEventListener('change', (e) => { doc.grain = e.target.checked; commit(); render(); });
+  $('#threadPick').addEventListener('input', (e) => {
+    prefs.thread = e.target.value.toUpperCase();
+    const el = selected();
+    if (el && isStitch(el)) { el.color = prefs.thread; render(); commitSoon(); }
+    syncLive();
+  });
+  $('#threadHex').addEventListener('change', (e) => (hexOk(e.target.value) ? setThread(norm(e.target.value)) : sync()));
+  $('#threadAllBtn').addEventListener('click', () => {
+    const el = selected();
+    const c = el && isStitch(el) ? el.color : prefs.thread;
+    for (const x of doc.elements) if (isStitch(x)) x.color = c;
+    commit();
+    render();
+  });
+
+  // Typing and sliding commit on a timer; make sure that lands before any other change starts.
+  const flush = () => { if (commitTimer) { clearTimeout(commitTimer); commitTimer = 0; commit(); } };
+  for (const id of ['#textInput', '#textSize', '#photoZoom', '#photoBri', '#photoCon', '#paperPick', '#threadPick']) {
+    $(id).addEventListener('change', flush);
+    $(id).addEventListener('blur', flush);
+  }
+
+  // 06 print
+  $('#printBtn').addEventListener('click', openPrint);
+  $('#saveBtn').addEventListener('click', saveImage);
+  $('#saveBtn2').addEventListener('click', saveImage);
+
+  // top bar & stage
+  $('#undoBtn').addEventListener('click', undo);
+  $('#redoBtn').addEventListener('click', redo);
+  $('#newBtn').addEventListener('click', () => {
+    if (!confirm('Start a new, blank design? You can undo this.')) return;
+    doc = { w: doc.w, h: doc.h, pitch: doc.pitch, paper: doc.paper, grain: doc.grain, elements: [] };
+    selectedId = null;
+    cropId = null;
+    commit();
+    render();
+  });
+  $('#viewSeg').addEventListener('click', (e) => {
+    const v = e.target.closest('button')?.dataset.view;
+    if (!v) return;
+    view.mode = v;
+    sync();
+    render();
+  });
+  $('#gridToggle').addEventListener('change', (e) => { view.grid = e.target.checked; render(); });
+  const zoomTo = (z) => { view.zoom = clamp(z, 0.5, 4); sync(); render(); };
+  $('#zoomIn').addEventListener('click', () => zoomTo(view.zoom * 1.25));
+  $('#zoomOut').addEventListener('click', () => zoomTo(view.zoom / 1.25));
+  $('#zoomFit').addEventListener('click', () => zoomTo(1));
+}
+
+async function saveImage() {
+  toast('Preparing image…');
+  try {
+    await exportPNG(doc, images);
+    toast('Image saved.');
+  } catch (err) {
+    console.error(err);
+    toast('Sorry, the image could not be saved.');
+  }
+}
+
+// ---------------------------------------------------------------- context bar
+
+function buildContextBar() {
+  const bar = $('#contextBar');
+  const el = selected();
+  bar.classList.toggle('cropping', !!cropId);
+  if (!el) { bar.hidden = true; return; }
+  bar.hidden = false;
+  if (cropId) {
+    bar.innerHTML = '<span class="what">Cropping</span><span>Drag the photo to reposition · scroll or use the Zoom slider to scale</span><span class="spacer"></span><button data-act="done">Done</button>';
+  } else {
+    const name = el.type === 'photo' ? 'Photo'
+      : el.type === 'text' ? `“${el.text.split('\n')[0].slice(0, 18)}${el.text.length > 18 ? '…' : ''}”`
+        : el.type === 'frame' ? `${FRAMES.find((f) => f.id === el.style)?.name || 'Frame'} frame`
+          : MOTIFS.find((m) => m.id === el.motif)?.name || 'Motif';
+    const photoBtns = el.type === 'photo'
+      ? (images.get(el.imgId) ? '<button data-act="crop">Crop</button><button data-act="replace">Replace</button>' : '<button data-act="replace">Choose photo</button>')
+      : '';
+    bar.innerHTML = `<span class="what">${escapeHtml(name)}</span>${photoBtns}<button data-act="back" title="Send backward">Backward</button><button data-act="fwd" title="Bring forward">Forward</button><button data-act="dup">Duplicate</button><span class="spacer"></span><button data-act="del" class="danger">Delete</button>`;
+  }
+}
+$('#contextBar').addEventListener('click', (e) => {
+  const act = e.target.closest('button')?.dataset.act;
+  if (!act) return;
+  ({
+    done: exitCrop,
+    crop: () => enterCrop(selectedId),
+    replace: () => pickFiles(selectedId),
+    back: () => moveLayer(-1),
+    fwd: () => moveLayer(1),
+    dup: duplicateSelected,
+    del: removeSelected,
+  })[act]?.();
+});
+
+const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ---------------------------------------------------------------- sync panel with state
+
+let thumbsFor = null;
+function buildFilterThumbs(el) {
+  const box = $('#filterChips');
+  const image = images.get(el.imgId);
+  const key = image ? el.imgId : 'none';
+  if (thumbsFor === key) return;
+  thumbsFor = key;
+  box.innerHTML = '';
+  const small = image ? applyFilter(image.img, image.w, image.h, 'original', 0, 0, 140) : null;
+  for (const f of FILTERS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'filter';
+    b.dataset.id = f.id;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 96;
+    if (small) {
+      const t = applyFilter(small, small.width, small.height, f.id, 0, 0, 140);
+      const s = Math.max(96 / t.width, 96 / t.height);
+      cv.getContext('2d').drawImage(t, (96 - t.width * s) / 2, (96 - t.height * s) / 2, t.width * s, t.height * s);
+    } else {
+      const g = cv.getContext('2d');
+      const grad = g.createLinearGradient(0, 0, 96, 96);
+      grad.addColorStop(0, '#e9c9b5'); grad.addColorStop(1, '#6d8fb3');
+      g.fillStyle = grad; g.fillRect(0, 0, 96, 96);
+      const t = applyFilter(cv, 96, 96, f.id, 0, 0, 96);
+      g.drawImage(t, 0, 0);
+    }
+    b.append(cv, document.createTextNode(f.name));
+    b.addEventListener('click', () => updateSelected((x) => { x.filter = f.id; }));
+    box.appendChild(b);
+  }
+}
+
+/** Light sync for things that change continuously while dragging/sliding. */
+function syncLive() {
+  const el = selected();
+  const st = stats(doc);
+  const g = gridOf(doc);
+  $('#stats').innerHTML = `<b>${st.stitches.toLocaleString()}</b> stitches · <b>${st.holes.toLocaleString()}</b> holes to punch<br>~${formatLength(st.threadIn)} of thread · ${g.cols} × ${g.rows} squares`;
+  $('#textSizeOut').textContent = `${el?.type === 'text' ? el.size : prefs.size} st · ${((el?.type === 'text' ? el.size : prefs.size) * doc.pitch).toFixed(1)}″`;
+  if (el?.type === 'photo') {
+    $('#photoZoom').value = el.zoom || 1;
+  }
+  if (el?.type === 'frame' && document.activeElement?.id !== 'frameCols' && document.activeElement?.id !== 'frameRows') {
+    $('#frameCols').value = el.cols;
+    $('#frameRows').value = el.rows;
+  }
+  const paperHex = $('#paperHex');
+  if (document.activeElement !== paperHex) paperHex.value = doc.paper.toUpperCase();
+  $('#paperPick').value = doc.paper.toLowerCase();
+  const threadColor = el && isStitch(el) ? el.color : prefs.thread;
+  if (document.activeElement !== $('#threadHex')) $('#threadHex').value = threadColor.toUpperCase();
+  $('#threadPick').value = threadColor.toLowerCase();
+  setOn($('#paperSwatches'), doc.paper.toUpperCase());
+  setOn($('#threadSwatches'), threadColor.toUpperCase());
+}
+
+function sync() {
+  const el = selected();
+  const g = gridOf(doc);
+
+  // 01
+  const sizeId = SIZES.find((s) => (s.w === doc.w && s.h === doc.h) || (s.w === doc.h && s.h === doc.w));
+  setOn($('#sizeChips'), sizeId ? `${sizeId.w}x${sizeId.h}` : '');
+  if (document.activeElement !== $('#wIn')) $('#wIn').value = +doc.w.toFixed(2);
+  if (document.activeElement !== $('#hIn')) $('#hIn').value = +doc.h.toFixed(2);
+  setOn($('#pitchChips'), Math.round(1 / doc.pitch));
+  $('#gridInfo').textContent = `${g.cols} × ${g.rows} squares · ${(g.cols + 1) * (g.rows + 1)} possible holes · ${(doc.w * 2.54).toFixed(1)} × ${(doc.h * 2.54).toFixed(1)} cm`;
+  $('#footInfo').textContent = `${inchLabel(doc.w)} × ${inchLabel(doc.h)} · ${g.cols} × ${g.rows} squares`;
+
+  // 02
+  const isPhoto = el?.type === 'photo';
+  $('#photoEdit').hidden = !isPhoto;
+  if (isPhoto) {
+    buildFilterThumbs(el);
+    setOn($('#filterChips'), el.filter || 'original');
+    setOn($('#shapeChips'), currentShape(el));
+    setOn($('#edgeChips'), el.edge || 'none');
+    $('#photoBri').value = el.brightness || 0;
+    $('#photoCon').value = el.contrast || 0;
+    const has = !!images.get(el.imgId);
+    $('#cropBtn').disabled = !has;
+    $('#cropBtn').textContent = cropId ? 'Done cropping' : 'Reposition / crop';
+    $('#replaceBtn').textContent = has ? 'Replace photo' : 'Choose photo';
+  }
+
+  // 03
+  const t = el?.type === 'text' ? el : null;
+  const ta = $('#textInput');
+  if (document.activeElement !== ta) ta.value = t ? t.text : prefs.draft;
+  setOn($('#fontChips'), t ? t.font : prefs.font);
+  setOn($('#weightChips'), t ? t.weight : prefs.weight);
+  setOn($('#alignChips'), t ? t.align : prefs.align);
+  $('#textSize').value = t ? t.size : prefs.size;
+  $('#addTextBtn').textContent = t ? 'Add as new text' : 'Add text';
+
+  // 04
+  $('#motifEdit').hidden = el?.type !== 'motif';
+  if (el?.type === 'motif') $('#scaleOut').textContent = `${el.scale}×`;
+  $('#frameEdit').hidden = el?.type !== 'frame';
+  if (el?.type === 'frame') setOn($('#frameStyleChips'), el.style);
+
+  // 05
+  $('#grainToggle').checked = !!doc.grain;
+  $('#threadTarget').textContent = el && isStitch(el) ? '· selected' : '· for new stitches';
+
+  // misc
+  $('#undoBtn').disabled = history.index <= 0;
+  $('#redoBtn').disabled = history.index >= history.stack.length - 1;
+  $('#viewSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.view === view.mode));
+  $('#zoomLabel').textContent = view.zoom === 1 ? 'Fit' : `${Math.round(view.zoom * 100)}%`;
+  buildContextBar();
+  syncLive();
+}
+
+// ---------------------------------------------------------------- print dialog
+
+const dialog = $('#printDialog');
+function readPrintForm() {
+  const f = dialog.querySelector('form');
+  for (const k of ['holes', 'photos', 'guide', 'paperFill', 'trim', 'chart']) printOpts[k] = f.elements[k].checked;
+}
+function updatePrintPreview() {
+  const { fit, trimDropped } = printPreview(doc, images, printOpts, $('#printPreview'));
+  const st = stats(doc);
+  $('#printNote').textContent = fit < 1
+    ? `This card is bigger than one ${PAPERS[printOpts.paper].name} sheet, so it will print at ${Math.round(fit * 100)}%. Pick a smaller canvas for an actual-size template.`
+    : `Prints at actual size: ${inchLabel(doc.w)} × ${inchLabel(doc.h)}, ${st.holes} holes to punch.${trimDropped ? ' Trim marks are left off so it fits on the sheet.' : ''}`;
+}
+function openPrint() {
+  if (cropId) exitCrop();
+  chips($('#paperSizeChips'), Object.entries(PAPERS).map(([id, p]) => ({ id, name: p.name })), {
+    onClick: (id) => { printOpts.paper = id; setOn($('#paperSizeChips'), id); updatePrintPreview(); },
+  });
+  setOn($('#paperSizeChips'), printOpts.paper);
+  const f = dialog.querySelector('form');
+  for (const k of ['holes', 'photos', 'guide', 'paperFill', 'trim', 'chart']) f.elements[k].checked = printOpts[k];
+  dialog.showModal();
+  requestAnimationFrame(updatePrintPreview);
+}
+dialog.querySelector('form').addEventListener('change', () => { readPrintForm(); updatePrintPreview(); });
+$('#doPrint').addEventListener('click', async (e) => {
+  e.preventDefault();
+  readPrintForm();
+  dialog.close();
+  try {
+    await printDesign(doc, images, printOpts);
+  } catch (err) {
+    console.error(err);
+    toast('Printing failed. Try “Save image” instead.');
+  }
+});
+
+// ---------------------------------------------------------------- keyboard
+
+document.addEventListener('keydown', (e) => {
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || dialog.open) return;
+  const meta = e.metaKey || e.ctrlKey;
+  const k = e.key.toLowerCase();
+  if (meta && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (meta && k === 'y') { e.preventDefault(); redo(); return; }
+  if (meta && k === 'd') { e.preventDefault(); duplicateSelected(); return; }
+  if (k === 'escape') { if (cropId) exitCrop(); else { select(null); render(); } return; }
+  const el = selected();
+  if (!el) return;
+  if (k === 'delete' || k === 'backspace') { e.preventDefault(); removeSelected(); return; }
+  if (k === 'enter' && el.type === 'photo' && images.get(el.imgId)) { cropId ? exitCrop() : enterCrop(el.id); return; }
+  const arrows = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
+  if (arrows[k]) {
+    e.preventDefault();
+    const step = (isStitch(el) ? doc.pitch : 0.05) * (e.shiftKey ? 5 : 1);
+    el.x += arrows[k][0] * step;
+    el.y += arrows[k][1] * step;
+    if (isStitch(el)) snapStitch(doc, el);
+    render();
+    commitSoon(400);
+  }
+});
+
+// ---------------------------------------------------------------- toast
+
+let toastTimer = 0;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+// ---------------------------------------------------------------- boot
+
+function boot() {
+  if (!loadSaved()) doc = starterDoc();
+  resolveCenters();
+  history.stack = [snapshot()];
+  history.index = 0;
+  buildPanel();
+  sync();
+  render();
+
+  // Once the cursive fonts arrive, re-rasterize text in place.
+  const loads = FONTS.map((f) => document.fonts.load(fontCss(f, 40), 'love'));
+  Promise.allSettled(loads).then(() => {
+    const before = new Map(doc.elements.filter((e) => e.type === 'text').map((e) => [e.id, boundsOf(doc, e)]));
+    fontsChanged();
+    for (const el of doc.elements) {
+      const b0 = before.get(el.id);
+      if (!b0) continue;
+      const b1 = boundsOf(doc, el);
+      if (el.align === 'center') el.x += b0.x + b0.w / 2 - (b1.x + b1.w / 2);
+      else if (el.align === 'right') el.x += b0.x + b0.w - (b1.x + b1.w);
+      snapStitch(doc, el);
+    }
+    history.stack[history.index] = snapshot();
+    sync();
+    render();
+  });
+}
+
+boot();
