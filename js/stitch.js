@@ -168,7 +168,7 @@ function typeRaster(f, lines, size, weight, align) {
 export function chartScale(font, size) {
   let k = (size * CAP_RATIO) / font.capHeight;
   const r = Math.round(k);
-  if (r >= 1 && k >= r * 0.92 && k <= r * 1.2) k = r;
+  if (r >= 1 && Math.abs(k - r) <= 0.04 * r) k = r; // exact chart size when within 4%
   return k;
 }
 
@@ -188,7 +188,7 @@ function fallbackGlyph(font, fontId, ch) {
     } else {
       let k = font.capHeight / simple.capHeight;
       const r = Math.round(k);
-      if (r >= 1 && k >= r * 0.92 && k <= r * 1.2) k = r;
+      if (r >= 1 && Math.abs(k - r) <= 0.04 * r) k = r; // exact chart size when within 4%
       const bm = k === 1 ? src : k > 1 ? strokeScale(src, k) : resample(src, k);
       g = { w: bm.w, h: bm.h, base: Math.max(1, Math.round(src.base * k)), data: bm.data };
     }

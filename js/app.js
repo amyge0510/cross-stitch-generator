@@ -636,7 +636,11 @@ function resize(el, d, p) {
     el.y = hy < 0 ? B - el.rows * g.p : T;
     return;
   }
-  const f = Math.max(Math.abs(p.x - ax) / b0.w, Math.abs(p.y - ay) / b0.h);
+  // Proportional: measure the drag along the box's diagonal (from the fixed corner), so the text
+  // grows and shrinks evenly with the cursor and keeps its shape.
+  const cx0 = hx < 0 ? L : R, cy0 = hy < 0 ? T : B; // the dragged corner, at the start
+  const vx = cx0 - ax, vy = cy0 - ay;
+  const f = Math.max(0.05, ((p.x - ax) * vx + (p.y - ay) * vy) / (vx * vx + vy * vy));
   if (el.type === 'text') {
     el.size = clamp(Math.round(orig.size * f), 5, 160);
     el.baseSize = el.size;
@@ -644,7 +648,7 @@ function resize(el, d, p) {
     delete el.group;
     if (el.home) { delete el.home.mw; delete el.home.mh; }
   }
-  if (el.type === 'motif') el.scale = clamp(Math.round(orig.scale * f), 1, 10);
+  if (el.type === 'motif') el.scale = clamp(orig.scale * f, 0.25, 10);
   const b = boundsOf(doc, el);
   el.x = hx < 0 ? R - b.w : L;
   el.y = hy < 0 ? B - b.h : T;
