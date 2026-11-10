@@ -400,3 +400,5 @@ details.more > :last-child { padding-bottom: 16px; }
 .mini-pal { margin-top: 8px; padding: 8px; background: #fff; border: 1px solid var(--card-line); border-radius: 12px; }
 .mini-pal .swatch { width: 24px; height: 24px; }
 .word-field.on .word-row > input, .word-field.on .word-row > textarea { border-color: var(--accent); }
+.word-row .word-opts { margin-top: 0; }
+#letterChips { grid-template-columns: repeat(2, 1fr); }

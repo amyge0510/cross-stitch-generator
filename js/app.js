@@ -40,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v21';
+const STORE = 'stitched:v22';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -1549,7 +1549,8 @@ function syncWords() {
         if (t.tpl) t.custom = true; // a size the person chose sticks when the font changes
         if (t.home) { delete t.home.mw; delete t.home.mh; }
         setHome(t);
-        num.value = v;
+        layoutTexts(doc, [t]); // keeps it on the card if the size is too big for it
+        num.value = Math.round(t.size);
         commit();
         render();
       };
@@ -1559,26 +1560,9 @@ function syncWords() {
       });
       num.addEventListener('change', () => setSize(+num.value));
       row.append(input, size);
-      // this text's own lettering and thread color
+      // this text's own thread color (lettering is one style for the whole card)
       const opts = document.createElement('div');
       opts.className = 'word-opts';
-      const fonts = document.createElement('div');
-      fonts.className = 'mini-fonts';
-      for (const f of FONTS) {
-        const fb = document.createElement('button');
-        fb.type = 'button';
-        fb.dataset.id = f.id;
-        fb.textContent = f.name;
-        fb.addEventListener('click', () => {
-          const t = byId(el.id);
-          if (!t) return;
-          t.font = f.id;
-          layoutTexts(doc, [t]);
-          commit();
-          render();
-        });
-        fonts.appendChild(fb);
-      }
       const dot = document.createElement('button');
       dot.type = 'button';
       dot.className = 'color-dot';
@@ -1595,8 +1579,9 @@ function syncWords() {
         render();
       }, 'thread');
       dot.addEventListener('click', () => { pal.hidden = !pal.hidden; });
-      opts.append(fonts, dot);
-      wrap.append(head, row, opts, pal);
+      opts.append(dot);
+      row.append(opts);
+      wrap.append(head, row, pal);
       box.appendChild(wrap);
     });
   }
@@ -1607,7 +1592,6 @@ function syncWords() {
     const num = wrap.querySelector('.size-step input');
     if (el && num && document.activeElement !== num) num.value = Math.round(el.size);
     if (el) {
-      setOn(wrap.querySelector('.mini-fonts'), fontById(el.font).id);
       wrap.querySelector('.color-dot').style.background = el.color;
       setOn(wrap.querySelector('.mini-pal'), el.color.toUpperCase());
     }

@@ -8,11 +8,10 @@ import { CHART_FONTS } from './chartfonts.js';
 // at their native size (or a whole multiple of it) and resampled only when they must shrink or grow.
 export const FONTS = [
   { id: 'viceroy', name: 'Viceroy', kind: 'chart' },
-  { id: 'antique', name: 'Antique', kind: 'chart' },
   { id: 'simple', name: 'Simple', kind: 'chart' },
 ];
 // Designs saved with earlier styles map onto the closest current one.
-const ALIASES = { hand: 'simple', dancing: 'simple', pacifico: 'simple', yellowtail: 'simple', playfair: 'simple', vibes: 'viceroy' };
+const ALIASES = { antique: 'viceroy', hand: 'simple', dancing: 'simple', pacifico: 'simple', yellowtail: 'simple', playfair: 'simple', vibes: 'viceroy' };
 
 // 0 = thinned to a single-stitch line (the classic stitched-on-paper look).
 export const WEIGHTS = [
@@ -37,7 +36,7 @@ export const nativeSize = (f) => (f.kind === 'chart' ? Math.round(CHART_FONTS[f.
  * is the same picture stitched finer. Small text gets smaller stitches, down to MIN_STITCH.
  */
 export const CARD_PITCH = 1 / 14;
-export const MAX_STITCH = 0.11; // inches between holes (2.8 mm)
+export const MAX_STITCH = 0.16; // inches between holes (4 mm): only really big letters go 2×2
 export const MIN_STITCH = 0.06; // (1.5 mm) smaller than this is needlessly fine
 /**
  * n: each charted stitch becomes n×n stitches (big letters). d: each d×d block of the chart becomes one

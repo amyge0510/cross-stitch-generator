@@ -13,7 +13,7 @@ Most people want something simple, so the steps are short and template-first:
 3. **Colors**: four preset looks: Classic, Maroon, Noir, Navy & gold.
 4. **Paper** and **Thread**: pick from the swatches. Thread color applies to every stitch.
 5. **Photo**: uploads fill the template's photo spots in order. Photo style (Original, Classic B&W, Soft B&W, Noir) applies to all photos, or to the one you tap on the card; a tapped photo can also change shape.
-6. **Text**: one box per piece of text, plus **Add text**. Three lettering styles, all real hand-charted cross-stitch alphabets stitched exactly as charted: **Viceroy** (elegant script), **Antique** (a flourished script, upper and lower case) and **Simple** (DMC's classic script with numbers). Numbers and symbols Viceroy and Antique don't include come from Simple. Letters are always stitched from the chart; only the stitch size changes (1.5–2.8 mm). Past the largest stitch, each charted stitch becomes 2×2 (then 3×3) smaller stitches; when a very detailed chart (Viceroy) would need stitches finer than 1.5 mm, each 2×2 block of the chart becomes one regular stitch instead.
+6. **Text**: one box per piece of text, plus **Add text**. Two lettering styles, both real hand-charted cross-stitch alphabets, one style per card: **Viceroy** (a flourished script) and **Simple** (DMC's classic script with numbers). Numbers and symbols Viceroy doesn't include come from Simple. Letters are always stitched from the chart; only the stitch size changes (1.5–4 mm). Past the largest stitch, each charted stitch becomes 2×2 (then 3×3) smaller stitches; when a very detailed chart (Viceroy) would need stitches finer than 1.5 mm, each 2×2 block of the chart becomes one regular stitch instead.
 
 **Print punch template** (top right) prints an actual-size template with a dot at every hole to pierce and a faint X for each stitch. Options: photos, paper color and trim marks. You can also save a 300 dpi image from the print window.
 
@@ -21,7 +21,7 @@ Switching templates keeps your photos and text. Everything on the card can still
 
 - **Select several**: Shift/Cmd-click, drag a box around pieces on empty paper, or Cmd+A for everything. They move, duplicate and delete together.
 - **Alignment guides**: while dragging, pieces snap (with a pink guide line) when an edge or center lines up with another piece or the card's center.
-- **Per-text settings live on each text's row**: its words, size (− / number / +), lettering and thread color. The Colors, Paper, Thread, Photo style and "Lettering for all text" steps always change the whole card.
+- **Per-text settings live on each text's row**: its words, size (− / number / +) and thread color. Lettering, Colors, Paper, Thread and Photo style always change the whole card.
 
 Everything runs in the browser; photos never leave the device. The design is autosaved to local storage, with undo/redo (⌘Z / ⇧⌘Z).
 
@@ -57,6 +57,5 @@ On Vercel, import the repo with the **Other** preset and no build command; every
 
 ## Credits & licenses
 
-- **Antique** alphabet: digitized from a Brazilian magazine script chart (“Medida do bordado em pontos”, 104 × 127). Source and license unknown; confirm permission before commercial use.
 - **Viceroy** alphabet: digitized from a clean render of a flourished script chart (upper and lower case). Source and license unknown; confirm permission before commercial use.
 - **Simple** alphabet: digitized from a clean scan of DMC's “Alphabet et chiffres” chart in *La Broderie en Petit* (© DMC; confirm permission before commercial use). . , + & - ' ! ? were drawn to match.
