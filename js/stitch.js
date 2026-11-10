@@ -187,7 +187,7 @@ function fallbackGlyph(font, fontId, ch) {
       let k = font.capHeight / simple.capHeight;
       const r = Math.round(k);
       if (r >= 1 && k >= r * 0.92 && k <= r * 1.2) k = r;
-      const bm = k === 1 ? src : Number.isInteger(k) ? scaleUp(src, k) : resample(src, k);
+      const bm = k === 1 ? src : k > 1 ? strokeScale(src, k) : resample(src, k);
       g = { w: bm.w, h: bm.h, base: Math.max(1, Math.round(src.base * k)), data: bm.data };
     }
     fallbackCache.set(key, g);
@@ -278,7 +278,47 @@ function chartText(el, font) {
   const k = chartScale(font, el.size);
   const out = trim(bm);
   if (k === 1) return out;
-  return Number.isInteger(k) ? scaleUp(out, k) : resample(out, k);
+  return k > 1 ? strokeScale(out, k) : resample(out, k);
+}
+
+/**
+ * Enlarges charted letters while keeping their stroke weight: one-stitch hairlines stay one stitch
+ * wide (redrawn as lines between the scaled stitch positions) and only areas that are thick in the
+ * chart (stitched in both directions) are filled in proportionally. Plain enlarging would turn every
+ * stitch into a 2×2 or 3×3 block.
+ */
+function strokeScale(bm, k) {
+  const W = Math.max(1, Math.round(bm.w * k)), H = Math.max(1, Math.round(bm.h * k));
+  const out = makeBitmap(W, H);
+  const on = (x, y) => x >= 0 && y >= 0 && x < bm.w && y < bm.h && bm.data[y * bm.w + x] === 1;
+  const at = (v) => Math.min(Math.round((v + 0.5) * k - 0.5), Math.round(v * k + k) - 1);
+  const plot = (x, y) => { if (x >= 0 && y >= 0 && x < W && y < H) out.data[y * W + x] = 1; };
+  const line = (x0, y0, x1, y1) => {
+    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
+    for (;;) {
+      plot(x0, y0);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+  };
+  for (let y = 0; y < bm.h; y++) {
+    for (let x = 0; x < bm.w; x++) {
+      if (!on(x, y)) continue;
+      const px = at(x), py = at(y);
+      plot(px, py);
+      for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [-1, 1]]) if (on(x + dx, y + dy)) line(px, py, at(x + dx), at(y + dy));
+      // Thick in the chart: in the middle of a straight run one way and backed by a neighbor the other
+      // way (a real 2+ stitch-wide stroke, not just a corner). Fill this stitch's whole scaled area.
+      const runV = on(x, y - 1) && on(x, y + 1), runH = on(x - 1, y) && on(x + 1, y);
+      if ((runV && (on(x - 1, y) || on(x + 1, y))) || (runH && (on(x, y - 1) || on(x, y + 1)))) {
+        for (let ty = Math.floor(y * k); ty < Math.ceil((y + 1) * k); ty++) for (let tx = Math.floor(x * k); tx < Math.ceil((x + 1) * k); tx++) plot(tx, ty);
+      }
+    }
+  }
+  return trim(out);
 }
 
 function scaleUp(bm, k) {

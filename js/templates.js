@@ -7,7 +7,7 @@
 //   frame: style, inset (supported, though no current template uses one)
 import { MOTIFS } from './motifs.js';
 import { boundsOf, snapStitch, gridOf } from './render.js';
-import { fontById, nativeSize } from './stitch.js';
+import { fontById } from './stitch.js';
 
 const PHOTO = (x, y, w, h, extra = {}) => ({ type: 'photo', x, y, w, h, ...extra });
 
@@ -20,9 +20,9 @@ export const TEMPLATES = [
     w: 10, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
     elements: [
       PHOTO(3.0, 2.1, 4.6, 3.5, { filter: 'classic' }),
-      { type: 'text', slot: 'w1', text: 'where', cx: 3.25, cy: 2.0, h: 1.57, maxW: 5.0, maxH: 2.0 },
-      { type: 'text', slot: 'w2', text: 'love', cx: 8.35, cy: 2.45, h: 1.57, maxW: 3.6, maxH: 2.0 },
-      { type: 'text', slot: 'w3', text: 'grows', cx: 6.35, cy: 5.75, h: 1.57, maxW: 4.8, maxH: 2.0 },
+      { type: 'text', slot: 'w1', text: 'where', cx: 3.25, cy: 2.0, h: 2.5, maxW: 5.0, maxH: 2.0 },
+      { type: 'text', slot: 'w2', text: 'love', cx: 8.35, cy: 2.45, h: 2.5, maxW: 3.6, maxH: 2.0 },
+      { type: 'text', slot: 'w3', text: 'grows', cx: 6.35, cy: 5.75, h: 2.5, maxW: 4.8, maxH: 2.0 },
       { type: 'motif', motif: 'heart', cx: 2.45, cy: 4.75, h: 0.55 },
     ],
   },
@@ -32,8 +32,8 @@ export const TEMPLATES = [
     w: 7, h: 5, paper: '#5A1A20', thread: '#F1E6CF', font: 'viceroy',
     elements: [
       PHOTO(1.32, 0.93, 4.34, 2.87, { filter: 'classic' }),
-      { type: 'text', slot: 'i1', text: 'A', cx: 1.22, cy: 1.09, h: 2.5, maxW: 2.2, maxH: 1.9 },
-      { type: 'text', slot: 'i2', text: 'J', cx: 5.83, cy: 3.82, h: 2.5, maxW: 2.2, maxH: 1.9 },
+      { type: 'text', slot: 'i1', text: 'A', cx: 1.4, cy: 1.09, h: 2.5, maxW: 2.8, maxH: 1.9 },
+      { type: 'text', slot: 'i2', text: 'J', cx: 5.6, cy: 3.85, h: 2.5, maxW: 2.8, maxH: 1.9 },
     ],
   },
   {
@@ -42,7 +42,7 @@ export const TEMPLATES = [
     w: 7, h: 5, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
     elements: [
       PHOTO(0.83, 0.87, 5.0, 3.3, { filter: 'original' }),
-      { type: 'text', slot: 'phrase', text: 'you\n+ me', cx: 4.7, cy: 3.0, h: 1.6, maxW: 3.4, maxH: 3.6 },
+      { type: 'text', slot: 'phrase', text: 'you\n+ me', cx: 4.7, cy: 3.0, h: 2.5, maxW: 3.4, maxH: 3.6 },
       { type: 'motif', motif: 'sparkle', cx: 5.33, cy: 0.87, h: 0.5 },
       { type: 'motif', motif: 'sparkle-small', cx: 3.89, cy: 1.0, h: 0.36 },
       { type: 'motif', motif: 'sparkle-small', cx: 5.8, cy: 1.68, h: 0.36 },
@@ -66,8 +66,9 @@ export const templateById = (id) => TEMPLATES.find((t) => t.id === id);
  *   home = { cx, cy: center as a fraction of the card; k: designed letter size as a fraction of the
  *            card's shorter side; mw, mh: the box it must fit in, same units }.
  * So switching fonts, card sizes or templates can never make text drift or shrink step by step.
- * Charted fonts are stitched exactly as charted (1×); they're only resampled smaller when the words
- * wouldn't otherwise fit. Texts that share a `group` (a template's words) share one size.
+ * Every lettering style gets the same default letter height for a given card size (Viceroy's charted
+ * size on the default templates). Smaller charts are enlarged with their stroke weight kept, and
+ * anything only shrinks if the words can't fit. Texts that share a `group` (a template's words) share one size.
  */
 /** Default layouts keep stitching at least this far (inches) inside the card edge. */
 export const EDGE_MARGIN = 0.3;
@@ -90,28 +91,15 @@ export function keepInside(doc, el) {
   snapStitch(doc, el);
 }
 
+/** Sets the text to its default size S, shrinking only if it can't fit its box. Returns size / S. */
 function fitScale(doc, el, f, S, maxW, maxH) {
   const fits = () => {
     const b = boundsOf(doc, el);
     return (!maxW || b.w <= maxW + 1e-6) && (!maxH || b.h <= maxH + 1e-6);
   };
-  if (f.kind !== 'chart') {
-    el.size = Math.max(6, Math.round(S));
-    while (el.size > 6 && !fits()) el.size = Math.max(6, Math.floor(el.size * 0.94));
-    return el.size / Math.max(1, S);
-  }
-  // Charted letters are always stitched at exactly their charted size (1×) on every card size,
-  // and only shrink if the words can't fit.
-  const native = nativeSize(f);
-  el.size = native;
-  if (fits()) return 1;
-  // Even 1× is too big: shrink just enough (resampled).
-  let size = native;
-  const b = boundsOf(doc, el);
-  size = Math.floor(native * Math.min(maxW ? maxW / b.w : 1, maxH ? maxH / b.h : 1));
-  el.size = Math.max(6, size);
-  while (el.size > 6 && !fits()) el.size -= 1;
-  return el.size / native;
+  el.size = Math.max(6, Math.round(S));
+  while (el.size > 6 && !fits()) el.size = Math.max(6, Math.min(el.size - 1, Math.floor(el.size * 0.96)));
+  return el.size / Math.max(1, S);
 }
 
 export function layoutTexts(doc, only = null) {
@@ -129,11 +117,7 @@ export function layoutTexts(doc, only = null) {
     if (el.group) scales.set(el.group, Math.min(scales.get(el.group) ?? Infinity, sc));
   }
   for (const el of texts) {
-    const f = fontById(el.font);
-    if (el.group) {
-      const sc = scales.get(el.group);
-      el.size = f.kind === 'chart' ? Math.max(6, Math.round(nativeSize(f) * sc)) : Math.max(6, Math.round(el.baseSize * sc));
-    }
+    if (el.group) el.size = Math.max(6, Math.round(el.baseSize * scales.get(el.group)));
     const b = boundsOf(doc, el);
     el.x = el.home.cx * doc.w - b.w / 2;
     el.y = el.home.cy * doc.h - b.h / 2;
