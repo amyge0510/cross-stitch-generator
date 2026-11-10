@@ -380,3 +380,4 @@ details.more > :last-child { padding-bottom: 16px; }
 .mini-bar button:hover { background: #f1ece6; }
 .mini-bar button[data-act="del"]:hover { color: var(--accent); }
 .mini-bar button.text { width: auto; padding: 0 14px; font-weight: 600; }
+.slider.text-size { grid-template-columns: 96px 1fr 70px; margin: 0 0 14px; }

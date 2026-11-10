@@ -227,10 +227,11 @@ function glyphFor(font, fontId, ch) {
 function setLine(font, fontId, text) {
   const right = new Map();
   const cells = [];
+  const lefts = []; // leftmost ink x of each character (undefined for spaces)
   let maxRight = -1, asc = 0, desc = 0, prevX = -Infinity, pendingSpace = false;
   const spaceW = Math.max(3, Math.round(font.capHeight * 0.45));
   for (const ch of text) {
-    if (ch === ' ') { pendingSpace = true; continue; }
+    if (ch === ' ') { pendingSpace = true; lefts.push(undefined); continue; }
     const g = glyphFor(font, fontId, ch);
     const rowsL = [];
     for (let y = 0; y < g.h; y++) {
@@ -257,6 +258,7 @@ function setLine(font, fontId, text) {
     }
     pendingSpace = false;
     prevX = x;
+    lefts.push(x + leftMin);
     rowsL.forEach(([l, r], y) => {
       if (l < 0) return;
       const rel = y - (g.base - 1);
@@ -269,7 +271,7 @@ function setLine(font, fontId, text) {
   }
   const minX = cells.length ? Math.min(...cells.map((c) => c[0])) : 0;
   for (const c of cells) c[0] -= minX;
-  return { cells, w: Math.max(1, maxRight - minX + 1), asc, desc };
+  return { cells, w: Math.max(1, maxRight - minX + 1), asc, desc, lefts: lefts.map((v) => (v === undefined ? v : v - minX)) };
 }
 
 function chartText(el, font) {
@@ -465,4 +467,18 @@ function rotateBitmap(bm, deg) {
     }
   }
   return trim(out);
+}
+
+/**
+ * How far (inches) the i-th character's leftmost stitch sits from the left edge of a one-line text,
+ * at its current stitch size. Used to line up a letter in one word with a letter in another.
+ */
+export function charLeft(el, i) {
+  const f = fontById(el.font);
+  if (f.kind !== 'chart') return 0;
+  const line = String(el.text || '').split('\n')[0];
+  const L = setLine(CHART_FONTS[f.id], f.id, line);
+  const x = L.lefts[i];
+  const { n, s } = textStitch(el);
+  return x === undefined ? 0 : x * n * s;
 }

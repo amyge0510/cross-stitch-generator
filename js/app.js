@@ -40,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v16';
+const STORE = 'stitched:v18';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -56,6 +56,28 @@ const printOpts = {
 
 const byId = (id) => doc.elements.find((e) => e.id === id);
 const selected = () => (selectedId ? byId(selectedId) : null);
+/*
+ * Selection: `selIds` holds every selected piece; `selectedId` is the primary one (the last clicked).
+ * Handles, rotate and crop work when exactly one piece is selected; with several, they move, align,
+ * duplicate and delete together, and the panel's font, thread color and text size apply to them.
+ */
+let selIds = new Set();
+const selection = () => doc.elements.filter((e) => selIds.has(e.id));
+const single = () => (selIds.size === 1 ? selected() : null);
+function setSelection(ids, primary = null) {
+  selIds = new Set(ids);
+  selectedId = primary && selIds.has(primary) ? primary : [...selIds].pop() ?? null;
+  if (cropId && !selIds.has(cropId)) cropId = null;
+}
+/** Bounding box (inches) around several pieces. */
+function unionBounds(els) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const el of els) {
+    const b = boundsOf(doc, el);
+    x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h);
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
 
 /*
  * Every element remembers its "home": where its center sits as a fraction of the card, and its size as a
@@ -114,7 +136,7 @@ function applyTemplate(id, { fresh = false } = {}) {
   prefs.thread = t.thread;
   doc = next;
   setHomes();
-  selectedId = null;
+  setSelection([]);
   cropId = null;
   commit();
   render();
@@ -159,7 +181,7 @@ function commitSoon(ms = 500) {
 function restore(i) {
   history.index = i;
   doc = JSON.parse(history.stack[i]);
-  if (selectedId && !byId(selectedId)) selectedId = null;
+  setSelection([...selIds].filter((id) => byId(id)), selectedId);
   if (cropId && !byId(cropId)) cropId = null;
   persist();
   sync();
@@ -333,18 +355,32 @@ function draw() {
     return;
   }
 
-  if (drag?.guides && (drag.guides.v || drag.guides.h)) {
+  if (drag?.kind === 'move' && drag.moved && drag.guides?.length) {
     ctx.save();
-    ctx.strokeStyle = 'rgba(214, 51, 108, 0.75)';
+    ctx.strokeStyle = 'rgba(214, 51, 108, 0.85)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    if (drag.guides.v) { const x = Math.round(V.ox + (doc.w / 2) * V.ppi) + 0.5; ctx.moveTo(x, V.oy); ctx.lineTo(x, V.oy + doc.h * V.ppi); }
-    if (drag.guides.h) { const y = Math.round(V.oy + (doc.h / 2) * V.ppi) + 0.5; ctx.moveTo(V.ox, y); ctx.lineTo(V.ox + doc.w * V.ppi, y); }
+    for (const g of drag.guides) {
+      const at = Math.round((g.v ? V.ox : V.oy) + g.at * V.ppi) + 0.5;
+      const a = (g.v ? V.oy : V.ox) + (g.from * V.ppi) - 8, z = (g.v ? V.oy : V.ox) + (g.to * V.ppi) + 8;
+      if (g.v) { ctx.moveTo(at, a); ctx.lineTo(at, z); } else { ctx.moveTo(a, at); ctx.lineTo(z, at); }
+    }
     ctx.stroke();
     ctx.restore();
   }
+  if (drag?.kind === 'marquee' && drag.moved) {
+    const x = V.ox + Math.min(drag.start.x, drag.cur.x) * V.ppi, y = V.oy + Math.min(drag.start.y, drag.cur.y) * V.ppi;
+    const w = Math.abs(drag.cur.x - drag.start.x) * V.ppi, h = Math.abs(drag.cur.y - drag.start.y) * V.ppi;
+    ctx.save();
+    ctx.fillStyle = 'rgba(168, 50, 46, 0.08)';
+    ctx.strokeStyle = 'rgba(168, 50, 46, 0.8)';
+    ctx.lineWidth = 1;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x + 0.5, y + 0.5, w, h);
+    ctx.restore();
+  }
 
-  const hov = hoverId && hoverId !== selectedId && byId(hoverId);
+  const hov = hoverId && !selIds.has(hoverId) && byId(hoverId);
   if (hov) {
     const r = toScreen(boundsOf(doc, hov));
     ctx.save();
@@ -353,7 +389,22 @@ function draw() {
     ctx.strokeRect(r.x - 2.5, r.y - 2.5, r.w + 5, r.h + 5);
     ctx.restore();
   }
-  const sel = selected();
+  if (selIds.size > 1) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(168,50,46,0.7)';
+    ctx.setLineDash([4, 3]);
+    for (const el of selection()) {
+      const r = toScreen(boundsOf(doc, el));
+      ctx.strokeRect(r.x - 2.5, r.y - 2.5, r.w + 5, r.h + 5);
+    }
+    ctx.setLineDash([]);
+    ctx.strokeStyle = '#a8322e';
+    ctx.lineWidth = 1.5;
+    const r = toScreen(unionBounds(selection()));
+    ctx.strokeRect(r.x - 6, r.y - 6, r.w + 12, r.h + 12);
+    ctx.restore();
+  }
+  const sel = single();
   if (sel) {
     const f = selFrame(sel);
     const busy = drag && drag.moved;
@@ -401,7 +452,7 @@ function draw() {
       ctx.restore();
     }
   }
-  placeMiniBar(sel);
+  placeMiniBar();
 }
 
 /** Circular-arrows icon for the rotate handle. */
@@ -432,8 +483,9 @@ function drawRotateIcon(c, x, y) {
 // ---------------------------------------------------------------- floating mini toolbar (like Canva's)
 
 const miniBar = $('#miniBar');
-function placeMiniBar(sel) {
-  const show = sel && !(drag && drag.moved);
+function placeMiniBar() {
+  const els = selection();
+  const show = els.length && !(drag && drag.moved);
   miniBar.hidden = !show;
   if (!show) return;
   const want = cropId ? 'crop' : 'edit';
@@ -448,8 +500,7 @@ function placeMiniBar(sel) {
            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15"/><path d="M9.5 7V5.2c0-.7.5-1.2 1.2-1.2h2.6c.7 0 1.2.5 1.2 1.2V7"/><path d="M6.5 7l.8 11.3c.1 1 .9 1.7 1.9 1.7h5.6c1 0 1.8-.7 1.9-1.7L17.5 7"/><path d="M10.3 10.8v5.4M13.7 10.8v5.4"/></svg>
          </button>`;
   }
-  const b = boundsOf(doc, sel);
-  const r = toScreen(b);
+  const r = toScreen(unionBounds(els));
   const bw = miniBar.offsetWidth || 96, bh = miniBar.offsetHeight || 40;
   let top = r.y - bh - 14;
   if (top < scroller.scrollTop + 6) top = r.y + r.h + ROT_GAP + 28; // no room above: go below the rotate handle
@@ -514,8 +565,9 @@ canvas.addEventListener('pointerdown', (e) => {
     }
     exitCrop();
   }
-  const sel = selected();
+  const sel = single();
   const h = sel && hitHandle(p, sel, touch);
+  const multi = e.shiftKey || e.metaKey || e.ctrlKey;
   if (h === 'rot') {
     const f = selFrame(sel);
     drag = { kind: 'rotate', id: sel.id, start: p, c: { x: f.cx, y: f.cy }, a0: sel.angle || 0, p0: Math.atan2(p.y - f.cy, p.x - f.cx), moved: false };
@@ -532,8 +584,22 @@ canvas.addEventListener('pointerdown', (e) => {
       return;
     }
     lastTap = { id: hit ? hit.id : null, t: now };
-    select(hit ? hit.id : null);
-    if (hit) drag = { kind: 'move', id: hit.id, start: p, orig: { x: hit.x, y: hit.y }, moved: false };
+    if (hit && multi) {
+      // Shift / Cmd / Ctrl click: add or remove this piece
+      const ids = new Set(selIds);
+      if (ids.has(hit.id)) ids.delete(hit.id); else ids.add(hit.id);
+      setSelection(ids, hit.id);
+      sync();
+    } else if (hit && !selIds.has(hit.id)) select(hit.id);
+    else if (hit) { selectedId = hit.id; sync(); } // clicking inside a group keeps the group
+    if (hit && selIds.has(hit.id)) {
+      const els = selection();
+      drag = { kind: 'move', id: hit.id, start: p, origs: new Map(els.map((x) => [x.id, { x: x.x, y: x.y }])), b0: unionBounds(els), moved: false };
+    } else if (!hit) {
+      // empty paper: drag out a selection box
+      if (!multi) { setSelection([]); sync(); }
+      drag = { kind: 'marquee', start: p, cur: p, base: new Set(selIds), moved: false };
+    }
   }
   if (drag) canvas.setPointerCapture(e.pointerId);
   render();
@@ -547,7 +613,7 @@ canvas.addEventListener('pointermove', (e) => {
       canvas.style.cursor = inside(p, boundsOf(doc, byId(cropId))) ? 'grab' : 'default';
       return;
     }
-    const sel = selected();
+    const sel = single();
     const h = sel && hitHandle(p, sel, false);
     const hit = h ? null : hitTest(p);
     canvas.style.cursor = h ? CURSORS[h] : hit ? 'move' : 'default';
@@ -555,21 +621,30 @@ canvas.addEventListener('pointermove', (e) => {
     if (nh !== hoverId) { hoverId = nh; render(); }
     return;
   }
-  const el = byId(drag.id);
-  if (!el) return;
   const dx = p.x - drag.start.x, dy = p.y - drag.start.y;
   if (!drag.moved && Math.hypot(dx, dy) * V.ppi < 2) return;
   drag.moved = true;
+  if (drag.kind === 'marquee') {
+    drag.cur = p;
+    const r = { x: Math.min(drag.start.x, p.x), y: Math.min(drag.start.y, p.y), w: Math.abs(p.x - drag.start.x), h: Math.abs(p.y - drag.start.y) };
+    const hits = doc.elements.filter((x) => {
+      const b = boundsOf(doc, x);
+      return b.x >= r.x && b.x + b.w <= r.x + r.w && b.y >= r.y && b.y + b.h <= r.y + r.h; // fully inside the box
+    });
+    setSelection([...drag.base, ...hits.map((x) => x.id)]);
+    sync();
+    render();
+    return;
+  }
+  const el = byId(drag.id);
+  if (!el) return;
   if (drag.kind === 'move') {
-    el.x = drag.orig.x + dx;
-    el.y = drag.orig.y + dy;
-    // Canva-style center guides: snap to the card's center lines when close
-    const b = boundsOf(doc, el);
-    const tol = 7 / V.ppi;
-    const offX = doc.w / 2 - (b.x + b.w / 2), offY = doc.h / 2 - (b.y + b.h / 2);
-    drag.guides = { v: Math.abs(offX) < tol, h: Math.abs(offY) < tol };
-    if (drag.guides.v) el.x += offX;
-    if (drag.guides.h) el.y += offY;
+    const snap = alignSnap(drag, dx, dy);
+    for (const [id, o] of drag.origs) {
+      const x = byId(id);
+      if (x) { x.x = o.x + dx + snap.x; x.y = o.y + dy + snap.y; }
+    }
+    drag.guides = snap.lines;
   } else if (drag.kind === 'pan') {
     const geo = photoGeometry(drag.orig, images.get(el.imgId));
     if (geo.ovX > 0.001) el.panX = clamp(drag.orig.panX + (2 * dx) / geo.ovX, -1, 1);
@@ -588,8 +663,60 @@ canvas.addEventListener('pointermove', (e) => {
   syncLive();
 });
 
+/**
+ * Canva-style alignment while dragging: the moving piece(s) snap when an edge or center lines up with
+ * the card's center or with another piece's edge or center. Returns the snap offset and guide lines.
+ */
+function alignSnap(d, dx, dy) {
+  const tol = 6 / V.ppi;
+  const b = { x: d.b0.x + dx, y: d.b0.y + dy, w: d.b0.w, h: d.b0.h };
+  const others = doc.elements.filter((x) => !d.origs.has(x.id)).map((x) => boundsOf(doc, x));
+  const card = { x: 0, y: 0, w: doc.w, h: doc.h };
+  const axis = (pos, size, key, span) => {
+    const mine = [pos, pos + size / 2, pos + size];
+    let best = null;
+    const consider = (target, from, to) => {
+      for (const m of mine) {
+        const off = target - m;
+        if (Math.abs(off) <= tol && (!best || Math.abs(off) < Math.abs(best.off) - 1e-9)) best = { off, at: target, from, to };
+        else if (best && Math.abs(Math.abs(off) - Math.abs(best.off)) < 1e-9 && Math.abs(target - best.at) < 1e-9) {
+          best.from = Math.min(best.from, from); best.to = Math.max(best.to, to);
+        }
+      }
+    };
+    consider(key === 'x' ? card.w / 2 : card.h / 2, 0, key === 'x' ? card.h : card.w);
+    for (const o of others) {
+      const op = key === 'x' ? o.x : o.y, os = key === 'x' ? o.w : o.h;
+      const sp0 = key === 'x' ? o.y : o.x, sp1 = sp0 + (key === 'x' ? o.h : o.w);
+      for (const t of [op, op + os / 2, op + os]) consider(t, Math.min(sp0, span[0]), Math.max(sp1, span[1]));
+    }
+    return best;
+  };
+  const sx = axis(b.x, b.w, 'x', [b.y, b.y + b.h]);
+  const sy = axis(b.y, b.h, 'y', [b.x, b.x + b.w]);
+  const lines = [];
+  if (sx) lines.push({ v: true, at: sx.at, from: Math.min(sx.from, b.y), to: Math.max(sx.to, b.y + b.h) });
+  if (sy) lines.push({ v: false, at: sy.at, from: Math.min(sy.from, b.x), to: Math.max(sy.to, b.x + b.w) });
+  return { x: sx ? sx.off : 0, y: sy ? sy.off : 0, lines };
+}
+
 function endDrag() {
   if (!drag) return;
+  if (drag.kind === 'marquee') { drag = null; sync(); render(); return; }
+  if (drag.kind === 'move' && drag.moved) {
+    for (const id of drag.origs.keys()) {
+      const x = byId(id);
+      if (!x) continue;
+      if (isStitch(x)) snapStitch(doc, x);
+      if (x.tpl) x.custom = true;
+      setHome(x);
+    }
+    commit();
+    drag = null;
+    canvas.style.cursor = 'default';
+    render();
+    return;
+  }
   const el = byId(drag.id);
   if (drag.moved && el) {
     if (isStitch(el)) snapStitch(doc, el);
@@ -689,9 +816,8 @@ canvas.addEventListener('wheel', (e) => {
 // ---------------------------------------------------------------- selection & element ops
 
 function select(id, { scroll = true } = {}) {
-  if (id === selectedId) return;
-  selectedId = id;
-  if (cropId && cropId !== id) cropId = null;
+  if (id === selectedId && selIds.size === (id ? 1 : 0)) return;
+  setSelection(id ? [id] : []);
   sync();
   const el = selected();
   if (!el || !scroll || !window.matchMedia('(min-width: 961px)').matches) return;
@@ -704,7 +830,7 @@ function enterCrop(id) {
   const el = byId(id);
   if (!el || !images.get(el.imgId)) return;
   cropId = id;
-  selectedId = id;
+  setSelection([id]);
   canvas.style.cursor = 'grab';
   sync();
   render();
@@ -721,7 +847,7 @@ function addElement(el, { at, index } = {}) {
   if (index === undefined) doc.elements.push(el);
   else doc.elements.splice(index, 0, el);
   setHome(el);
-  selectedId = null;
+  setSelection([]);
   select(el.id);
   commit();
   render();
@@ -778,24 +904,30 @@ function keepAnchor(el, fn, { vertical = false } = {}) {
 }
 
 function removeSelected() {
-  const el = selected();
-  if (!el) return;
-  doc.elements = doc.elements.filter((e) => e.id !== el.id);
-  selectedId = null;
+  if (!selIds.size) return;
+  doc.elements = doc.elements.filter((e) => !selIds.has(e.id));
+  setSelection([]);
   cropId = null;
   commit();
   render();
 }
 function duplicateSelected() {
-  const el = selected();
-  if (!el) return;
-  const copy = { ...JSON.parse(JSON.stringify(el)), id: uid() };
-  delete copy.tpl; delete copy.slot; delete copy.group; delete copy.custom;
+  const els = selection();
+  if (!els.length) return;
   const g = gridOf(doc);
-  copy.x += g.p * 3;
-  copy.y += g.p * 3;
-  const i = doc.elements.indexOf(el);
-  addElement(copy, { index: i + 1 });
+  const copies = els.map((el) => {
+    const copy = { ...JSON.parse(JSON.stringify(el)), id: uid() };
+    delete copy.tpl; delete copy.slot; delete copy.group; delete copy.custom;
+    copy.x += g.p * 3;
+    copy.y += g.p * 3;
+    doc.elements.splice(doc.elements.indexOf(el) + 1, 0, copy);
+    setHome(copy);
+    return copy;
+  });
+  setSelection(copies.map((c) => c.id));
+  commit();
+  sync();
+  render();
 }
 function moveLayer(dir) {
   const el = selected();
@@ -1074,9 +1206,16 @@ function updateSelected(fn, { anchor = false, live = false } = {}) {
 }
 
 /** Thread color goes on every stitch on the card. */
+/** Pieces a panel change applies to: the selected ones of that kind, or all of them if none are selected. */
+function targets(test) {
+  const sel = selection().filter(test);
+  return sel.length ? sel : doc.elements.filter(test);
+}
+
+/** Thread color for the selected stitching (or all stitching when nothing is selected). */
 function setThread(c) {
   prefs.thread = c;
-  for (const x of doc.elements) if (isStitch(x)) x.color = c;
+  for (const x of targets(isStitch)) x.color = c;
   commit();
   render();
 }
@@ -1126,6 +1265,20 @@ function buildPanel() {
   // text
   buildLetterChips();
   $('#addTextBtn').addEventListener('click', addTextBox);
+  // One size for the selected text (or all text): every box gets exactly the same letter size.
+  $('#textSize').addEventListener('input', (e) => {
+    const v = +e.target.value;
+    for (const el of targets((x) => x.type === 'text')) {
+      keepAnchor(el, () => { el.size = v; el.baseSize = v; }, { vertical: true });
+      if (el.tpl) el.custom = true;
+      if (el.home) { delete el.home.mw; delete el.home.mh; }
+      setHome(el);
+    }
+    render();
+    syncLive();
+    commitSoon();
+  });
+  $('#textSize').addEventListener('change', flush);
 
   // top bar, print dialog & stage
   $('#printBtn').addEventListener('click', openPrint);
@@ -1181,7 +1334,7 @@ function renderTemplateThumbs() {
 
 const allPhotos = () => doc.elements.filter((e) => e.type === 'photo');
 
-const selectedPhoto = () => (selected()?.type === 'photo' ? selected() : null);
+const selectedPhoto = () => (single()?.type === 'photo' ? single() : null);
 
 /** Photo style applies to the selected photo, or to every photo when none is selected. */
 let styleFor = null;
@@ -1215,8 +1368,7 @@ function buildStyleChips() {
     }
     b.append(cv, document.createTextNode(f.name));
     b.addEventListener('click', () => {
-      const one = selectedPhoto();
-      const photos = one ? [one] : allPhotos();
+      const photos = targets((x) => x.type === 'photo');
       if (!photos.length) { toast('This design has no photo spots. Pick a template with a photo.'); return; }
       for (const p of photos) p.filter = f.id;
       commit();
@@ -1228,7 +1380,7 @@ function buildStyleChips() {
 
 /** The lettering style in use: whatever the text on the card uses, else the last one picked. */
 function currentLetter() {
-  return doc.elements.find((e) => e.type === 'text')?.font || prefs.letter || 'viceroy';
+  return (selection().find((e) => e.type === 'text') || doc.elements.find((e) => e.type === 'text'))?.font || prefs.letter || 'viceroy';
 }
 
 function buildLetterChips() {
@@ -1240,9 +1392,9 @@ function buildLetterChips() {
     b.dataset.id = f.id;
     b.append(fontPreview(f, f.id === 'simple' ? 'Amy' : 'AJ'), Object.assign(document.createElement('small'), { textContent: f.name }));
     b.addEventListener('click', () => {
-      prefs.letter = f.id;
-      prefs.font = f.id;
-      for (const el of doc.elements) if (el.type === 'text') el.font = f.id;
+      const sel = selection().filter((x) => x.type === 'text');
+      if (!sel.length) { prefs.letter = f.id; prefs.font = f.id; }
+      for (const el of targets((x) => x.type === 'text')) el.font = f.id;
       layoutTexts(doc); // same words, same spots, sized for the new lettering
       commit();
       render();
@@ -1324,7 +1476,7 @@ function syncWords() {
       del.textContent = '×';
       del.addEventListener('click', () => {
         doc.elements = doc.elements.filter((e) => e.id !== el.id);
-        if (selectedId === el.id) selectedId = null;
+        setSelection([...selIds].filter((id) => id !== el.id));
         commit();
         render();
       });
@@ -1358,7 +1510,7 @@ function syncWords() {
     const el = byId(wrap.dataset.id);
     const input = wrap.querySelector('input, textarea');
     if (el && document.activeElement !== input && input.value !== el.text) input.value = el.text;
-    wrap.classList.toggle('on', wrap.dataset.id === selectedId);
+    wrap.classList.toggle('on', selIds.has(wrap.dataset.id));
   }
   setOn($('#letterChips'), currentLetter());
 }
@@ -1382,7 +1534,14 @@ const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&l
 
 /** Light sync for things that change continuously while dragging/sliding. */
 function syncLive() {
-  const threadColor = doc.elements.find(isStitch)?.color || prefs.thread;
+  const ts = targets((x) => x.type === 'text');
+  const slider = $('#textSize');
+  if (ts.length && document.activeElement !== slider) slider.value = Math.round(ts[0].size);
+  const sizes = new Set(ts.map((t) => Math.round(t.size)));
+  $('#textSizeOut').textContent = !ts.length ? '' : sizes.size > 1 ? 'mixed'
+    : `${((ts[0].size * doc.pitch * 0.72)).toFixed(2)}″ tall`;
+  $('#textSizeLabel').textContent = selection().some((x) => x.type === 'text') ? 'Size · selected' : 'Size · all text';
+  const threadColor = (selection().find(isStitch) || doc.elements.find(isStitch))?.color || prefs.thread;
   setOn($('#paperSwatches'), doc.paper.toUpperCase());
   setOn($('#threadSwatches'), threadColor.toUpperCase());
   const look = LOOKS.find((l) => l.paper === doc.paper.toUpperCase() && l.thread === threadColor.toUpperCase());
@@ -1464,19 +1623,23 @@ document.addEventListener('keydown', (e) => {
   if (meta && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (meta && k === 'y') { e.preventDefault(); redo(); return; }
   if (meta && k === 'd') { e.preventDefault(); duplicateSelected(); return; }
+  if (meta && k === 'a') { e.preventDefault(); setSelection(doc.elements.map((x) => x.id)); sync(); render(); return; }
   if (k === 'escape') { if (cropId) exitCrop(); else { select(null); render(); } return; }
   const el = selected();
   if (!el) return;
   if (k === 'delete' || k === 'backspace') { e.preventDefault(); removeSelected(); return; }
-  if (k === 'enter' && el.type === 'photo' && images.get(el.imgId)) { cropId ? exitCrop() : enterCrop(el.id); return; }
+  if (k === 'enter' && single()?.type === 'photo' && images.get(el.imgId)) { cropId ? exitCrop() : enterCrop(el.id); return; }
   const arrows = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
   if (arrows[k]) {
     e.preventDefault();
-    const step = (isStitch(el) ? doc.pitch : 0.05) * (e.shiftKey ? 5 : 1);
-    el.x += arrows[k][0] * step;
-    el.y += arrows[k][1] * step;
-    if (isStitch(el)) snapStitch(doc, el);
-    setHome(el);
+    const step = doc.pitch * (e.shiftKey ? 5 : 1);
+    for (const x of selection()) {
+      x.x += arrows[k][0] * step;
+      x.y += arrows[k][1] * step;
+      if (isStitch(x)) snapStitch(doc, x);
+      if (x.tpl) x.custom = true;
+      setHome(x);
+    }
     render();
     commitSoon(400);
   }

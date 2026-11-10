@@ -17,7 +17,11 @@ Most people want something simple, so the steps are short and template-first:
 
 **Print punch template** (top right) prints page 1, an actual-size template with a dot at every hole to pierce, and page 2, a stitch chart. You can also save a 300 dpi image from the print window. Holes are spaced 14 per inch (1.8 mm).
 
-Switching templates keeps your photos and text. Everything on the card can still be dragged, resized and layered.
+Switching templates keeps your photos and text. Everything on the card can still be dragged, resized and rotated:
+
+- **Select several**: Shift/Cmd-click, drag a box around pieces on empty paper, or Cmd+A for everything. They move, duplicate and delete together.
+- **Alignment guides**: while dragging, pieces snap (with a pink guide line) when an edge or center lines up with another piece or the card's center.
+- **Changes apply to the selection**: lettering, thread color, photo style and text **Size** change only the selected pieces, or everything when nothing is selected. The Size slider gives every targeted text box exactly the same size.
 
 Everything runs in the browser; photos never leave the device. The design is autosaved to local storage, with undo/redo (⌘Z / ⇧⌘Z).
 
@@ -54,5 +58,5 @@ On Vercel, import the repo with the **Other** preset and no build command; every
 ## Credits & licenses
 
 - **Antique** alphabet: digitized from a Brazilian magazine script chart (“Medida do bordado em pontos”, 104 × 127). Source and license unknown; confirm permission before commercial use.
-- **Viceroy** alphabet: digitized from the “Monograma Viceroy” chart. The original designer and license are unknown, so confirm permission before any commercial use.
+- **Viceroy** alphabet: digitized from a clean render of a flourished script chart (upper and lower case). Source and license unknown; confirm permission before commercial use.
 - **Simple** alphabet: digitized from a clean scan of DMC's “Alphabet et chiffres” chart in *La Broderie en Petit* (© DMC; confirm permission before commercial use). . , + & - ' ! ? were drawn to match.

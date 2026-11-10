@@ -4,10 +4,12 @@
 // paper size × font has its own default letter size and placement.
 //   photo: box [x0, y0, x1, y1]
 //   text:  box [x0, y0, x1, y1] the words are centered in and sized to fill; text (default words)
+//          optional 5th item { under: 'w3', at: 1 }: shift sideways so this word's first letter sits
+//          exactly under letter `at` of that other word (e.g. the w of "we" under the r of "are")
 //   motif: at [cx, cy], h (height as a fraction of the card's shorter side)
 import { MOTIFS } from './motifs.js';
 import { boundsOf, snapStitch } from './render.js';
-import { fontById } from './stitch.js';
+import { fontById, charLeft } from './stitch.js';
 
 /** Which layout a card uses, from its proportions. */
 export function shapeOf(w, h) {
@@ -29,10 +31,12 @@ export const TEMPLATES = [
     text: { w1: 'how', w2: 'lucky', w3: 'are', w4: 'we' },
     layouts: {
       land: { p1: [0.26, 0.32, 0.73, 0.79], w1: [0.10, 0.08, 0.46, 0.31], w2: [0.17, 0.26, 0.75, 0.57], w3: [0.08, 0.69, 0.44, 0.90], w4: [0.55, 0.67, 0.84, 0.88] },
-      wide: { p1: [0.36, 0.18, 0.62, 0.94], w1: [0.03, 0.06, 0.22, 0.46], w2: [0.10, 0.36, 0.44, 0.97], w3: [0.63, 0.08, 0.82, 0.48], w4: [0.74, 0.50, 0.96, 0.90] },
+      // 11×4: "how lucky" stacked at the left, a large photo right of center, "are" over the photo's
+      // bottom-right corner with "we" below it, the w exactly under the r
+      wide: { p1: [0.39, 0.12, 0.81, 0.88], w1: [0.03, 0.08, 0.27, 0.36], w2: [0.10, 0.29, 0.40, 0.70], w3: [0.70, 0.56, 0.92, 0.78], w4: [0.78, 0.74, 0.98, 0.95, { under: 'w3', at: 1 }] },
       square: { p1: [0.24, 0.36, 0.74, 0.82], w1: [0.08, 0.06, 0.45, 0.25], w2: [0.15, 0.21, 0.73, 0.48], w3: [0.05, 0.78, 0.40, 0.96], w4: [0.54, 0.76, 0.84, 0.94] },
       port: { p1: [0.18, 0.37, 0.80, 0.77], w1: [0.06, 0.06, 0.48, 0.19], w2: [0.13, 0.17, 0.81, 0.40], w3: [0.04, 0.77, 0.44, 0.93], w4: [0.56, 0.76, 0.88, 0.92] },
-      tall: { p1: [0.10, 0.34, 0.84, 0.66], w1: [0.06, 0.05, 0.70, 0.16], w2: [0.08, 0.15, 0.96, 0.34], w3: [0.06, 0.69, 0.60, 0.82], w4: [0.40, 0.82, 0.94, 0.95] },
+      tall: { p1: [0.10, 0.34, 0.84, 0.66], w1: [0.06, 0.05, 0.70, 0.16], w2: [0.08, 0.15, 0.96, 0.34], w3: [0.06, 0.69, 0.60, 0.82], w4: [0.40, 0.82, 0.94, 0.95, { under: 'w3', at: 1 }] },
     },
   },
   {
@@ -147,6 +151,13 @@ export function layoutTexts(doc, only = null) {
     el.x = ((x0 + x1) / 2) * doc.w - b.w / 2;
     el.y = ((y0 + y1) / 2) * doc.h - b.h / 2;
     snapStitch(doc, el);
+    keepInside(doc, el);
+  }
+  for (const el of boxed) {
+    const opt = specFor(t, doc, el.tpl)[4];
+    const ref = opt && boxed.find((o) => o.tpl === opt.under);
+    if (!ref || String(ref.text).length <= opt.at) continue;
+    el.x = ref.x + charLeft(ref, opt.at) - charLeft(el, 0);
     keepInside(doc, el);
   }
   for (const el of all) {
