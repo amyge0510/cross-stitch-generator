@@ -1,5 +1,5 @@
 // Print (punch template + stitch chart) and image export.
-import { drawScene, cellMap, stats, luminance, boundsOf } from './render.js';
+import { drawScene, stats, luminance, boundsOf, stitchList, gridOf } from './render.js';
 
 export const PAPERS = {
   letter: { w: 8.5, h: 11, name: 'US Letter' },
@@ -76,7 +76,8 @@ export function renderChart(doc, page, dpi) {
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, c.width, c.height);
-  const { map, g } = cellMap(doc);
+  const g = gridOf(doc);
+  const stitches = stitchList(doc);
   const st = stats(doc);
 
   const ink = '#2a201c';
@@ -87,7 +88,7 @@ export function renderChart(doc, page, dpi) {
   ctx.font = `${8.5 * pt}px "DM Mono", monospace`;
   ctx.fillStyle = '#6d625a';
   ctx.fillText(
-    `${inchLabel(doc.w)} × ${inchLabel(doc.h)} card · ${g.cols} × ${g.rows} squares · holes ${(g.p * 25.4).toFixed(1)} mm apart · ${st.stitches} stitches · ${st.holes} holes`,
+    `${inchLabel(doc.w)} × ${inchLabel(doc.h)} card · ${st.stitches} stitches · ${st.holes} holes · gridlines ${(g.p * 25.4).toFixed(1)} mm apart`,
     0, 32 * pt,
   );
 
@@ -111,17 +112,18 @@ export function renderChart(doc, page, dpi) {
     ctx.textAlign = 'left';
   }
 
-  for (const [k, color] of map) {
-    const col = k % g.cols, row = (k - col) / g.cols;
-    const x = gx + col * cs, y = gy + row * cs;
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, cs, cs);
-    ctx.strokeStyle = luminance(color) > 0.6 ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.75)';
-    ctx.lineWidth = Math.max(1, cs * 0.08);
-    const m = cs * 0.22;
+  // every stitch at its real position and size (lettering has its own stitch spacing)
+  const k = cs / g.p; // chart px per inch
+  for (const t of stitches) {
+    const x = gx + (t.x - g.gx) * k, y = gy + (t.y - g.gy) * k, w = t.s * k;
+    ctx.fillStyle = t.color;
+    ctx.fillRect(x, y, w, w);
+    ctx.strokeStyle = luminance(t.color) > 0.6 ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.75)';
+    ctx.lineWidth = Math.max(1, w * 0.08);
+    const m = w * 0.22;
     ctx.beginPath();
-    ctx.moveTo(x + m, y + m); ctx.lineTo(x + cs - m, y + cs - m);
-    ctx.moveTo(x + m, y + cs - m); ctx.lineTo(x + cs - m, y + m);
+    ctx.moveTo(x + m, y + m); ctx.lineTo(x + w - m, y + w - m);
+    ctx.moveTo(x + m, y + w - m); ctx.lineTo(x + w - m, y + m);
     ctx.stroke();
   }
 

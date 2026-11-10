@@ -1,5 +1,5 @@
 // Draws a design onto any 2D canvas context. Used by the editor, image export and print.
-import { bitmapFor } from './stitch.js';
+import { bitmapFor, textStitch } from './stitch.js';
 import { applyFilter } from './filters.js';
 
 export const isStitch = (el) => el.type === 'text' || el.type === 'motif' || el.type === 'frame';
@@ -18,7 +18,21 @@ export function cellPos(doc, el) {
   return { col: Math.round((el.x - g.gx) / g.p), row: Math.round((el.y - g.gy) / g.p) };
 }
 
+/**
+ * Where a stitched element's stitches go: its bitmap, top-left corner and stitch size, in inches.
+ * Motifs and frames sit on the card's hole grid; lettering has its own stitch size (see textStitch),
+ * so it's placed freely.
+ */
+export function stitchPlacement(doc, el) {
+  const bm = bitmapFor(el);
+  if (el.type === 'text') return { bm, x: el.x, y: el.y, s: textStitch(el).s };
+  const g = gridOf(doc);
+  const { col, row } = cellPos(doc, el);
+  return { bm, x: g.gx + col * g.p, y: g.gy + row * g.p, s: g.p };
+}
+
 export function snapStitch(doc, el) {
+  if (el.type === 'text') return; // lettering keeps its own stitch spacing
   const g = gridOf(doc);
   const { col, row } = cellPos(doc, el);
   el.x = g.gx + col * g.p;
@@ -37,10 +51,8 @@ export function boundsOf(doc, el) {
     const W = el.w * c + el.h * sn, H = el.w * sn + el.h * c;
     return { x: el.x + el.w / 2 - W / 2, y: el.y + el.h / 2 - H / 2, w: W, h: H };
   }
-  const g = gridOf(doc);
-  const bm = bitmapFor(el);
-  const { col, row } = cellPos(doc, el);
-  return { x: g.gx + col * g.p, y: g.gy + row * g.p, w: bm.w * g.p, h: bm.h * g.p };
+  const P = stitchPlacement(doc, el);
+  return { x: P.x, y: P.y, w: P.bm.w * P.s, h: P.bm.h * P.s };
 }
 
 // ---------- photos ----------
@@ -171,45 +183,60 @@ export function paintStitches(ctx, bm, x0, y0, s, color, mode) {
   ctx.restore();
 }
 
-/** All stitched cells clipped to the paper: Map(cellIndex -> color), later elements win. */
-export function cellMap(doc) {
+/**
+ * Every stitch on the paper, as { x, y, s, color } in inches (top-left corner and size).
+ * Card-grid stitches are de-duplicated (later elements win), lettering stitches are kept as they are.
+ */
+export function stitchList(doc) {
   const g = gridOf(doc);
-  const map = new Map();
+  const grid = new Map();
+  const free = [];
   for (const el of doc.elements) {
     if (!isStitch(el)) continue;
-    const bm = bitmapFor(el);
-    const { col, row } = cellPos(doc, el);
-    eachCell(bm, (x, y) => {
-      const c = col + x, r = row + y;
-      if (c >= 0 && r >= 0 && c < g.cols && r < g.rows) map.set(r * g.cols + c, el.color);
+    const P = stitchPlacement(doc, el);
+    eachCell(P.bm, (x, y) => {
+      const sx = P.x + x * P.s, sy = P.y + y * P.s;
+      if (sx < -1e-6 || sy < -1e-6 || sx + P.s > doc.w + 1e-6 || sy + P.s > doc.h + 1e-6) return;
+      if (el.type === 'text') free.push({ x: sx, y: sy, s: P.s, color: el.color });
+      else {
+        const c = Math.round((sx - g.gx) / g.p), r = Math.round((sy - g.gy) / g.p);
+        grid.set(r * g.cols + c, { x: sx, y: sy, s: g.p, color: el.color });
+      }
     });
   }
-  return { map, g };
+  return [...grid.values(), ...free];
 }
 
-/** Hole positions (grid vertices) that need punching. */
+/** Hole positions (inches) that need punching: the four corners of every stitch, shared corners once. */
 export function holeList(doc) {
-  const { map, g } = cellMap(doc);
-  const set = new Set();
-  const W = g.cols + 1;
-  for (const k of map.keys()) {
-    const c = k % g.cols, r = (k - c) / g.cols;
-    set.add(r * W + c); set.add(r * W + c + 1); set.add((r + 1) * W + c); set.add((r + 1) * W + c + 1);
+  const stitches = stitchList(doc);
+  const seen = new Map();
+  const key = (x, y) => `${Math.round(x * 2000)},${Math.round(y * 2000)}`;
+  for (const t of stitches) {
+    for (const [hx, hy] of [[t.x, t.y], [t.x + t.s, t.y], [t.x, t.y + t.s], [t.x + t.s, t.y + t.s]]) {
+      const k = key(hx, hy);
+      if (!seen.has(k)) seen.set(k, [hx, hy]);
+    }
   }
-  return { holes: [...set].map((k) => [k % W, Math.floor(k / W)]), g, cells: map };
+  return { holes: [...seen.values()], stitches, g: gridOf(doc) };
 }
 
 export function stats(doc) {
-  const { holes, cells, g } = holeList(doc);
+  const { holes, stitches } = holeList(doc);
   const byColor = new Map();
-  for (const c of cells.values()) byColor.set(c, (byColor.get(c) || 0) + 1);
   // Front: two diagonals; back: roughly two cell sides; plus 15% for tails.
-  const perStitch = (2 * Math.SQRT2 + 2) * g.p * 1.15;
+  const thread = (t) => (2 * Math.SQRT2 + 2) * t.s * 1.15;
+  let total = 0;
+  for (const t of stitches) {
+    const e = byColor.get(t.color) || { n: 0, threadIn: 0 };
+    e.n++; e.threadIn += thread(t); total += thread(t);
+    byColor.set(t.color, e);
+  }
   return {
-    stitches: cells.size,
+    stitches: stitches.length,
     holes: holes.length,
-    threadIn: cells.size * perStitch,
-    byColor: [...byColor.entries()].map(([color, n]) => ({ color, n, threadIn: n * perStitch })),
+    threadIn: total,
+    byColor: [...byColor.entries()].map(([color, e]) => ({ color, n: e.n, threadIn: e.threadIn })),
   };
 }
 
@@ -292,9 +319,8 @@ export function drawScene(ctx, doc, images, o) {
         drawPhotoEl(el, image);
         ctx.restore();
       } else {
-        const bm = bitmapFor(el);
-        const { col, row } = cellPos(doc, el);
-        paintStitches(ctx, bm, toX(g.gx) + col * s, toY(g.gy) + row * s, s, el.color, o.stitches);
+        const P = stitchPlacement(doc, el);
+        paintStitches(ctx, P.bm, toX(P.x), toY(P.y), P.s * ppi, el.color, o.stitches);
       }
     }
   };
@@ -335,7 +361,7 @@ export function drawScene(ctx, doc, images, o) {
     const r = Math.max(0.8, Math.min(s * 0.13, ppi * 0.022));
     ctx.beginPath();
     for (const [x, y] of holes) {
-      const cx = toX(g.gx) + x * s, cy = toY(g.gy) + y * s;
+      const cx = toX(x), cy = toY(y);
       ctx.moveTo(cx + r, cy);
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
     }

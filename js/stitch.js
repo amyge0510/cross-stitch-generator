@@ -30,6 +30,23 @@ const CAP_RATIO = 0.72;
 /** The size at which a charted font is stitched exactly as charted. */
 export const nativeSize = (f) => (f.kind === 'chart' ? Math.round(CHART_FONTS[f.id].capHeight / CAP_RATIO) : 18);
 
+/*
+ * Charted lettering is always stitched exactly as charted; only the stitch size changes.
+ * `size` sets the capital height (size × card spacing × CAP_RATIO). The stitch size follows it, up to
+ * MAX_STITCH; past that, every charted stitch becomes n×n smaller stitches (2×2, 3×3…), so a big letter
+ * is the same picture stitched finer. Small text gets smaller stitches, down to MIN_STITCH.
+ */
+export const CARD_PITCH = 1 / 14;
+export const MAX_STITCH = 0.11; // inches between holes (2.8 mm)
+export const MIN_STITCH = 0.04; // (1 mm)
+export function textStitch(el) {
+  const f = fontById(el.font);
+  const c = f.kind === 'chart' ? CHART_FONTS[f.id].capHeight : 1;
+  const capH = Math.max(1, el.size) * CARD_PITCH * CAP_RATIO;
+  const n = Math.max(1, Math.ceil(capH / (c * MAX_STITCH) - 1e-9));
+  return { n, s: Math.max(MIN_STITCH, capH / (c * n)) };
+}
+
 // Canvas px per stitch when rasterizing text: fewer for big letters so typing stays fast.
 const sampleFor = (size) => Math.max(3, Math.min(8, Math.round(112 / size)));
 const STROKE = [0.15, 0, 0.4, 0.85]; // extra outline (in stitches) per weight
@@ -44,7 +61,7 @@ export function fontsChanged() {
 
 function keyFor(el) {
   switch (el.type) {
-    case 'text': return `t|${el.text}|${el.font}|${el.size}|${el.weight}|${el.align}|${fontEpoch}`;
+    case 'text': return `t|${el.text}|${el.font}|${textStitch(el).n}|${el.align}|${fontEpoch}`;
     case 'motif': return `m|${el.motif}|${el.scale}|${el.rot}|${el.flip}`;
     case 'frame': return `f|${el.style}|${el.cols}|${el.rows}`;
     default: return null;
@@ -186,10 +203,9 @@ function fallbackGlyph(font, fontId, ch) {
     if (!src) {
       g = { w: 2, h: 1, base: 1, data: new Uint8Array(2) }; // unknown character: a small blank
     } else {
-      let k = font.capHeight / simple.capHeight;
-      const r = Math.round(k);
-      if (r >= 1 && Math.abs(k - r) <= 0.04 * r) k = r; // exact chart size when within 4%
-      const bm = k === 1 ? src : k > 1 ? strokeScale(src, k) : resample(src, k);
+      // whole-stitch multiple of the Simple chart that best matches this font's capitals
+      const k = Math.max(1, Math.round(font.capHeight / simple.capHeight));
+      const bm = k === 1 ? src : scaleUp(src, k);
       g = { w: bm.w, h: bm.h, base: Math.max(1, Math.round(src.base * k)), data: bm.data };
     }
     fallbackCache.set(key, g);
@@ -277,50 +293,9 @@ function chartText(el, font) {
       if (xx >= 0 && yy >= 0 && xx < W && yy < H) bm.data[yy * W + xx] = 1;
     }
   }
-  const k = chartScale(font, el.size);
   const out = trim(bm);
-  if (k === 1) return out;
-  return k > 1 ? strokeScale(out, k) : resample(out, k);
-}
-
-/**
- * Enlarges charted letters while keeping their stroke weight: one-stitch hairlines stay one stitch
- * wide (redrawn as lines between the scaled stitch positions) and only areas that are thick in the
- * chart (stitched in both directions) are filled in proportionally. Plain enlarging would turn every
- * stitch into a 2×2 or 3×3 block.
- */
-function strokeScale(bm, k) {
-  const W = Math.max(1, Math.round(bm.w * k)), H = Math.max(1, Math.round(bm.h * k));
-  const out = makeBitmap(W, H);
-  const on = (x, y) => x >= 0 && y >= 0 && x < bm.w && y < bm.h && bm.data[y * bm.w + x] === 1;
-  const at = (v) => Math.min(Math.round((v + 0.5) * k - 0.5), Math.round(v * k + k) - 1);
-  const plot = (x, y) => { if (x >= 0 && y >= 0 && x < W && y < H) out.data[y * W + x] = 1; };
-  const line = (x0, y0, x1, y1) => {
-    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-    let err = dx + dy;
-    for (;;) {
-      plot(x0, y0);
-      if (x0 === x1 && y0 === y1) break;
-      const e2 = 2 * err;
-      if (e2 >= dy) { err += dy; x0 += sx; }
-      if (e2 <= dx) { err += dx; y0 += sy; }
-    }
-  };
-  for (let y = 0; y < bm.h; y++) {
-    for (let x = 0; x < bm.w; x++) {
-      if (!on(x, y)) continue;
-      const px = at(x), py = at(y);
-      plot(px, py);
-      for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [-1, 1]]) if (on(x + dx, y + dy)) line(px, py, at(x + dx), at(y + dy));
-      // Thick in the chart: in the middle of a straight run one way and backed by a neighbor the other
-      // way (a real 2+ stitch-wide stroke, not just a corner). Fill this stitch's whole scaled area.
-      const runV = on(x, y - 1) && on(x, y + 1), runH = on(x - 1, y) && on(x + 1, y);
-      if ((runV && (on(x - 1, y) || on(x + 1, y))) || (runH && (on(x, y - 1) || on(x, y + 1)))) {
-        for (let ty = Math.floor(y * k); ty < Math.ceil((y + 1) * k); ty++) for (let tx = Math.floor(x * k); tx < Math.ceil((x + 1) * k); tx++) plot(tx, ty);
-      }
-    }
-  }
-  return trim(out);
+  const { n } = textStitch(el);
+  return n > 1 ? scaleUp(out, n) : out;
 }
 
 function scaleUp(bm, k) {
