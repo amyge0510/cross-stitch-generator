@@ -15,15 +15,15 @@ const PHOTO = (x, y, w, h, extra = {}) => ({ type: 'photo', x, y, w, h, ...extra
 export const TEMPLATES = [
   {
     // "where love grows": chunky words around a black & white photo, and a little heart.
-    // Simple lettering at exactly 2× its charted size, kept off the photo so every word reads clearly.
+    // Simple lettering at its charted size, tucked against the photo's edges.
     id: 'words', name: 'Love note',
     w: 10, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
     elements: [
       PHOTO(3.0, 2.1, 4.6, 3.5, { filter: 'classic' }),
-      { type: 'text', slot: 'w1', text: 'where', cx: 2.75, cy: 1.2, h: 1.57, maxW: 5.0, maxH: 2.0 },
-      { type: 'text', slot: 'w2', text: 'love', cx: 8.15, cy: 1.75, h: 1.57, maxW: 3.6, maxH: 2.0 },
-      { type: 'text', slot: 'w3', text: 'grows', cx: 6.35, cy: 6.55, h: 1.57, maxW: 4.8, maxH: 2.0 },
-      { type: 'motif', motif: 'heart', cx: 2.05, cy: 4.9, h: 0.85 },
+      { type: 'text', slot: 'w1', text: 'where', cx: 3.25, cy: 2.0, h: 1.57, maxW: 5.0, maxH: 2.0 },
+      { type: 'text', slot: 'w2', text: 'love', cx: 8.35, cy: 2.45, h: 1.57, maxW: 3.6, maxH: 2.0 },
+      { type: 'text', slot: 'w3', text: 'grows', cx: 6.35, cy: 5.75, h: 1.57, maxW: 4.8, maxH: 2.0 },
+      { type: 'motif', motif: 'heart', cx: 2.45, cy: 4.75, h: 0.55 },
     ],
   },
   {
@@ -66,8 +66,8 @@ export const templateById = (id) => TEMPLATES.find((t) => t.id === id);
  *   home = { cx, cy: center as a fraction of the card; k: designed letter size as a fraction of the
  *            card's shorter side; mw, mh: the box it must fit in, same units }.
  * So switching fonts, card sizes or templates can never make text drift or shrink step by step.
- * Charted fonts are stitched at a whole multiple of their chart (crisp); they're only resampled below 1×
- * when the words wouldn't otherwise fit. Texts that share a `group` (a template's words) share one size.
+ * Charted fonts are stitched exactly as charted (1×); they're only resampled smaller when the words
+ * wouldn't otherwise fit. Texts that share a `group` (a template's words) share one size.
  */
 function fitScale(doc, el, f, S, maxW, maxH) {
   const fits = () => {
@@ -79,11 +79,11 @@ function fitScale(doc, el, f, S, maxW, maxH) {
     while (el.size > 6 && !fits()) el.size = Math.max(6, Math.floor(el.size * 0.94));
     return el.size / Math.max(1, S);
   }
+  // Charted letters are always stitched at exactly their charted size (1×) on every card size,
+  // and only shrink if the words can't fit.
   const native = nativeSize(f);
-  for (let n = Math.max(1, Math.round(S / native)); n >= 1; n--) {
-    el.size = native * n;
-    if (fits()) return n;
-  }
+  el.size = native;
+  if (fits()) return 1;
   // Even 1× is too big: shrink just enough (resampled).
   let size = native;
   const b = boundsOf(doc, el);

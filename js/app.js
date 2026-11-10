@@ -29,8 +29,8 @@ const SHAPES = [
   { id: '3:2', name: '3:2' },
   { id: '16:9', name: 'Wide' },
 ];
-const PAPER_COLORS = ['#FBF8F2', '#FFFFFF', '#C9A57D', '#F0D5D1', '#93AFD6', '#C2CBB0', '#F2E3AE', '#5A1A20', '#1F2A44', '#262322'];
-const THREAD_COLORS = ['#C1121F', '#9E1B32', '#6B1E23', '#E79AA6', '#F1E6CF', '#FFFFFF', '#C9A24A', '#1C1A1A', '#23395B', '#5F7A52', '#9A7BC2', '#6FA3D8'];
+const PAPER_COLORS = ['#FBF8F2', '#FFFFFF', '#C9A57D', '#F0D5D1', '#C2CBB0', '#F2E3AE', '#5A1A20', '#1F2A44', '#262322'];
+const THREAD_COLORS = ['#C1121F', '#9E1B32', '#E79AA6', '#F1E6CF', '#FFFFFF', '#C9A24A', '#1C1A1A', '#23395B', '#5F7A52'];
 const LOOKS = [
   { name: 'Classic', paper: '#FBF8F2', thread: '#C1121F' },
   { name: 'Maroon', paper: '#5A1A20', thread: '#F1E6CF' },
@@ -40,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v7';
+const STORE = 'stitched:v8';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -825,9 +825,23 @@ function chips(container, items, { onClick, solid = false } = {}) {
 }
 const setOn = (container, id) => container.querySelectorAll('[data-id]').forEach((b) => b.classList.toggle('on', b.dataset.id === String(id)));
 
-function swatches(container, colors, onClick) {
+// Colors people add with "+" are remembered in this browser (a convenience; it's fine if storage is unavailable).
+const CUSTOM_KEY = 'stitched:colors';
+function loadCustom() {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_KEY)) || {}; } catch { return {}; }
+}
+function saveCustom(all) {
+  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+}
+
+/**
+ * A row of color swatches. With `kind`, it ends in a "+" circle that opens the color wheel;
+ * the picked color joins the palette and is applied.
+ */
+function swatches(container, colors, onClick, kind = null) {
   container.innerHTML = '';
-  for (const c of colors) {
+  const custom = kind ? (loadCustom()[kind] || []).filter((c) => !colors.includes(c)) : [];
+  for (const c of [...colors, ...custom]) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'swatch';
@@ -837,6 +851,26 @@ function swatches(container, colors, onClick) {
     b.addEventListener('click', () => onClick(c));
     container.appendChild(b);
   }
+  if (!kind) return;
+  const add = document.createElement('label');
+  add.className = 'swatch add';
+  add.title = 'Add a color';
+  add.innerHTML = '<span aria-hidden="true">+</span>';
+  const input = document.createElement('input');
+  input.type = 'color';
+  input.setAttribute('aria-label', `Add a ${kind} color`);
+  input.addEventListener('change', () => {
+    const c = input.value.toUpperCase();
+    const all = loadCustom();
+    const list = (all[kind] || []).filter((x) => x !== c);
+    if (!colors.includes(c)) list.push(c);
+    all[kind] = list.slice(-8);
+    saveCustom(all);
+    swatches(container, colors, onClick, kind);
+    onClick(c);
+  });
+  add.appendChild(input);
+  container.appendChild(add);
 }
 
 /** Resizes the card and lays everything out again from each element's home, so sizes never drift. */
@@ -925,8 +959,8 @@ function buildPanel() {
     });
     looks.appendChild(b);
   }
-  swatches($('#paperSwatches'), PAPER_COLORS, (c) => { doc.paper = c; commit(); render(); });
-  swatches($('#threadSwatches'), THREAD_COLORS, setThread);
+  swatches($('#paperSwatches'), PAPER_COLORS, (c) => { doc.paper = c; commit(); render(); }, 'paper');
+  swatches($('#threadSwatches'), THREAD_COLORS, setThread, 'thread');
 
   // photo
   $('#uploadBtn').addEventListener('click', () => pickFiles());
