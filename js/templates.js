@@ -69,6 +69,27 @@ export const templateById = (id) => TEMPLATES.find((t) => t.id === id);
  * Charted fonts are stitched exactly as charted (1×); they're only resampled smaller when the words
  * wouldn't otherwise fit. Texts that share a `group` (a template's words) share one size.
  */
+/** Default layouts keep stitching at least this far (inches) inside the card edge. */
+export const EDGE_MARGIN = 0.3;
+
+/** Nudges a stitched element so it sits at least EDGE_MARGIN inside the card. */
+export function keepInside(doc, el) {
+  const M = EDGE_MARGIN;
+  const b = boundsOf(doc, el);
+  if (b.w <= doc.w - 2 * M) el.x += Math.max(0, M - b.x) - Math.max(0, b.x + b.w - (doc.w - M));
+  else el.x += doc.w / 2 - (b.x + b.w / 2);
+  if (b.h <= doc.h - 2 * M) el.y += Math.max(0, M - b.y) - Math.max(0, b.y + b.h - (doc.h - M));
+  else el.y += doc.h / 2 - (b.y + b.h / 2);
+  snapStitch(doc, el);
+  // snapping can push it back over by a fraction of a stitch; step in by one if so
+  const c = boundsOf(doc, el);
+  if (c.x < M - 1e-6 && c.w <= doc.w - 2 * M) el.x += doc.pitch;
+  if (c.x + c.w > doc.w - M + 1e-6 && c.w <= doc.w - 2 * M) el.x -= doc.pitch;
+  if (c.y < M - 1e-6 && c.h <= doc.h - 2 * M) el.y += doc.pitch;
+  if (c.y + c.h > doc.h - M + 1e-6 && c.h <= doc.h - 2 * M) el.y -= doc.pitch;
+  snapStitch(doc, el);
+}
+
 function fitScale(doc, el, f, S, maxW, maxH) {
   const fits = () => {
     const b = boundsOf(doc, el);
@@ -101,7 +122,10 @@ export function layoutTexts(doc, only = null) {
     const H = el.home, f = fontById(el.font);
     const S = (H.k * m) / p;
     el.baseSize = S;
-    const sc = fitScale(doc, el, f, S, H.mw ? H.mw * m : 0, H.mh ? H.mh * m : 0);
+    // the box it fits in never extends past the card's margins
+    const maxW = Math.min(H.mw ? H.mw * m : Infinity, doc.w - 2 * EDGE_MARGIN);
+    const maxH = Math.min(H.mh ? H.mh * m : Infinity, doc.h - 2 * EDGE_MARGIN);
+    const sc = fitScale(doc, el, f, S, maxW, maxH);
     if (el.group) scales.set(el.group, Math.min(scales.get(el.group) ?? Infinity, sc));
   }
   for (const el of texts) {
@@ -114,6 +138,7 @@ export function layoutTexts(doc, only = null) {
     el.x = el.home.cx * doc.w - b.w / 2;
     el.y = el.home.cy * doc.h - b.h / 2;
     snapStitch(doc, el);
+    keepInside(doc, el);
   }
 }
 
@@ -123,6 +148,7 @@ function place(doc, el, cx, cy) {
   el.x = cx - b.w / 2;
   el.y = cy - b.h / 2;
   snapStitch(doc, el);
+  keepInside(doc, el);
 }
 
 /**

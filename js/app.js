@@ -5,7 +5,7 @@ import {
   drawScene, gridOf, boundsOf, snapStitch, photoGeometry, isStitch, paintStitches, stats, EDGES, filteredImage,
 } from './render.js';
 import { printDesign, printPreview, exportPNG, PAPERS, formatLength, inchLabel } from './print.js';
-import { TEMPLATES, templateById, buildTemplate, layoutTexts } from './templates.js';
+import { TEMPLATES, templateById, buildTemplate, layoutTexts, keepInside } from './templates.js';
 
 const $ = (s) => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -40,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v8';
+const STORE = 'stitched:v9';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -314,6 +314,17 @@ function draw() {
     return;
   }
 
+  if (drag?.guides && (drag.guides.v || drag.guides.h)) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(214, 51, 108, 0.75)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    if (drag.guides.v) { const x = Math.round(V.ox + (doc.w / 2) * V.ppi) + 0.5; ctx.moveTo(x, V.oy); ctx.lineTo(x, V.oy + doc.h * V.ppi); }
+    if (drag.guides.h) { const y = Math.round(V.oy + (doc.h / 2) * V.ppi) + 0.5; ctx.moveTo(V.ox, y); ctx.lineTo(V.ox + doc.w * V.ppi, y); }
+    ctx.stroke();
+    ctx.restore();
+  }
+
   const hov = hoverId && hoverId !== selectedId && byId(hoverId);
   if (hov) {
     const r = toScreen(boundsOf(doc, hov));
@@ -440,6 +451,13 @@ canvas.addEventListener('pointermove', (e) => {
   if (drag.kind === 'move') {
     el.x = drag.orig.x + dx;
     el.y = drag.orig.y + dy;
+    // Canva-style center guides: snap to the card's center lines when close
+    const b = boundsOf(doc, el);
+    const tol = 7 / V.ppi;
+    const offX = doc.w / 2 - (b.x + b.w / 2), offY = doc.h / 2 - (b.y + b.h / 2);
+    drag.guides = { v: Math.abs(offX) < tol, h: Math.abs(offY) < tol };
+    if (drag.guides.v) el.x += offX;
+    if (drag.guides.h) el.y += offY;
   } else if (drag.kind === 'pan') {
     const geo = photoGeometry(drag.orig, images.get(el.imgId));
     if (geo.ovX > 0.001) el.panX = clamp(drag.orig.panX + (2 * dx) / geo.ovX, -1, 1);
@@ -896,11 +914,13 @@ function setCanvasSize(w, h) {
       el.rows = Math.max(3, Math.round((H.fr * h) / p));
     }
     placeAt(el, H.cx * w, H.cy * h);
-    // keep it on the card (without touching its home)
-    const b = boundsOf(doc, el);
-    if (b.w <= doc.w) el.x += Math.max(0, -b.x) - Math.max(0, b.x + b.w - doc.w);
-    if (b.h <= doc.h) el.y += Math.max(0, -b.y) - Math.max(0, b.y + b.h - doc.h);
-    if (isStitch(el)) snapStitch(doc, el);
+    // keep it on the card (without touching its home); stitching stays clear of the edge
+    if (isStitch(el)) keepInside(doc, el);
+    else {
+      const b = boundsOf(doc, el);
+      if (b.w <= doc.w) el.x += Math.max(0, -b.x) - Math.max(0, b.x + b.w - doc.w);
+      if (b.h <= doc.h) el.y += Math.max(0, -b.y) - Math.max(0, b.y + b.h - doc.h);
+    }
   }
   layoutTexts(doc);
   commit();
