@@ -898,13 +898,15 @@ function buildPanel() {
   chips($('#sizeChips'), SIZES.map((s) => ({ id: `${s.w}x${s.h}`, html: `${s.w} × ${s.h}″<small>${s.note}</small>` })), {
     onClick: (id) => {
       const [a, b] = id.split('x').map(Number);
-      const landscape = doc.w > doc.h;
+      // Remember orientation across square sizes, so landscape stays landscape after trying 6×6.
+      if (doc.w !== doc.h) doc.landscape = doc.w > doc.h;
+      const landscape = !!doc.landscape;
       setCanvasSize(landscape ? Math.max(a, b) : Math.min(a, b), landscape ? Math.min(a, b) : Math.max(a, b));
     },
   });
   $('#wIn').addEventListener('change', (e) => setCanvasSize(e.target.value, doc.h));
   $('#hIn').addEventListener('change', (e) => setCanvasSize(doc.w, e.target.value));
-  $('#swapBtn').addEventListener('click', () => setCanvasSize(doc.h, doc.w));
+  $('#swapBtn').addEventListener('click', () => { doc.landscape = !(doc.w > doc.h || (doc.w === doc.h && doc.landscape)); setCanvasSize(doc.h, doc.w); });
 
   // color presets, paper, thread
   const looks = $('#lookChips');
