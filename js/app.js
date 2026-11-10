@@ -2,7 +2,7 @@ import { MOTIFS, FRAMES } from './motifs.js';
 import { FONTS, fontCss, fontsChanged, bitmapFor, nativeSize } from './stitch.js';
 import { FILTERS, applyFilter } from './filters.js';
 import {
-  drawScene, gridOf, boundsOf, snapStitch, photoGeometry, isStitch, paintStitches, stats, EDGES, filteredImage,
+  drawScene, gridOf, boundsOf, snapStitch, photoGeometry, isStitch, paintStitches, stats, EDGES, filteredImage, photoFrame,
 } from './render.js';
 import { printDesign, printPreview, exportPNG, PAPERS, formatLength, inchLabel } from './print.js';
 import { TEMPLATES, templateById, buildTemplate, layoutTexts, keepInside } from './templates.js';
@@ -40,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v10';
+const STORE = 'stitched:v11';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -258,13 +258,32 @@ function render() {
 }
 
 function handlesFor(el) {
-  if (el.type === 'photo' || el.type === 'frame') return ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-  return ['nw', 'ne', 'se', 'sw'];
+  if (el.type === 'photo' || el.type === 'frame') return ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w', 'rot'];
+  return ['nw', 'ne', 'se', 'sw', 'rot'];
 }
-function handlePoint(b, h) {
-  const x = h.includes('w') ? b.x : h.includes('e') ? b.x + b.w : b.x + b.w / 2;
-  const y = h.includes('n') ? b.y : h.includes('s') ? b.y + b.h : b.y + b.h / 2;
+/** The selection frame in inches: center, size and rotation. */
+function selFrame(el) {
+  if (el.type === 'photo') return photoFrame(el);
+  const b = boundsOf(doc, el);
+  return { cx: b.x + b.w / 2, cy: b.y + b.h / 2, w: b.w, h: b.h, angle: 0 };
+}
+const ROT_GAP = 26; // px between the frame's bottom edge and the rotate handle
+/** A handle's position in the frame's own (unrotated, centered) coordinates, in inches. */
+function handleLocal(f, h) {
+  const pad = 3 / V.ppi;
+  if (h === 'rot') return [0, f.h / 2 + pad + ROT_GAP / V.ppi];
+  const x = h.includes('w') ? -f.w / 2 - pad : h.includes('e') ? f.w / 2 + pad : 0;
+  const y = h.includes('n') ? -f.h / 2 - pad : h.includes('s') ? f.h / 2 + pad : 0;
   return [x, y];
+}
+const rad = (deg) => (deg * Math.PI) / 180;
+function toWorld(f, [lx, ly]) {
+  const a = rad(f.angle), c = Math.cos(a), s = Math.sin(a);
+  return [f.cx + lx * c - ly * s, f.cy + lx * s + ly * c];
+}
+function toLocal(f, p) {
+  const a = rad(f.angle), c = Math.cos(a), s = Math.sin(a), dx = p.x - f.cx, dy = p.y - f.cy;
+  return [dx * c + dy * s, -dx * s + dy * c];
 }
 const toScreen = (b) => ({ x: V.ox + b.x * V.ppi, y: V.oy + b.y * V.ppi, w: b.w * V.ppi, h: b.h * V.ppi });
 
@@ -336,26 +355,115 @@ function draw() {
   }
   const sel = selected();
   if (sel) {
-    const b = boundsOf(doc, sel);
-    const r = toScreen(b);
+    const f = selFrame(sel);
+    const busy = drag && drag.moved;
     ctx.save();
+    ctx.translate(V.ox + f.cx * V.ppi, V.oy + f.cy * V.ppi);
+    ctx.rotate(rad(f.angle));
     ctx.strokeStyle = '#a8322e';
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(r.x - 3, r.y - 3, r.w + 6, r.h + 6);
-    const pad = { x: b.x - 3 / V.ppi, y: b.y - 3 / V.ppi, w: b.w + 6 / V.ppi, h: b.h + 6 / V.ppi };
-    for (const h of handlesFor(sel)) {
-      const [hx, hy] = handlePoint(pad, h);
-      const sx = V.ox + hx * V.ppi, sy = V.oy + hy * V.ppi;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      if (h.length === 2) ctx.arc(sx, sy, 5.5, 0, Math.PI * 2);
-      else ctx.roundRect ? ctx.roundRect(sx - 7, sy - 3.5, 14, 7, 3.5) : ctx.rect(sx - 7, sy - 3.5, 14, 7);
-      ctx.fill();
-      ctx.stroke();
+    ctx.strokeRect(-f.w / 2 * V.ppi - 3, -f.h / 2 * V.ppi - 3, f.w * V.ppi + 6, f.h * V.ppi + 6);
+    if (!busy || drag.kind === 'rotate') {
+      for (const h of handlesFor(sel)) {
+        const [lx, ly] = handleLocal(f, h);
+        const sx = lx * V.ppi, sy = ly * V.ppi;
+        ctx.fillStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = h === 'rot' ? '#cfc8c0' : '#a8322e';
+        ctx.beginPath();
+        if (h === 'rot') {
+          ctx.save();
+          ctx.shadowColor = 'rgba(40,25,15,0.18)'; ctx.shadowBlur = 6; ctx.shadowOffsetY = 1;
+          ctx.arc(sx, sy, 12, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+          ctx.stroke();
+          drawRotateIcon(ctx, sx, sy);
+          continue;
+        }
+        if (h.length === 2) ctx.arc(sx, sy, 5.5, 0, Math.PI * 2);
+        else if (h === 'n' || h === 's') ctx.roundRect ? ctx.roundRect(sx - 7, sy - 3.5, 14, 7, 3.5) : ctx.rect(sx - 7, sy - 3.5, 14, 7);
+        else ctx.roundRect ? ctx.roundRect(sx - 3.5, sy - 7, 7, 14, 3.5) : ctx.rect(sx - 3.5, sy - 7, 7, 14);
+        ctx.fill();
+        ctx.stroke();
+      }
     }
     ctx.restore();
+    if (drag?.kind === 'rotate' && drag.moved) {
+      ctx.save();
+      ctx.font = '600 12px "Archivo Narrow", sans-serif';
+      const label = `${Math.round(((sel.angle || 0) % 360 + 360) % 360)}°`;
+      const [wx, wy] = toWorld(f, handleLocal(f, 'rot'));
+      const x = V.ox + wx * V.ppi, y = V.oy + wy * V.ppi + 26;
+      const tw = ctx.measureText(label).width + 14;
+      ctx.fillStyle = 'rgba(42,32,28,0.9)';
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - tw / 2, y - 10, tw, 20, 10) : ctx.rect(x - tw / 2, y - 10, tw, 20); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, x, y + 0.5);
+      ctx.restore();
+    }
   }
+  placeMiniBar(sel);
 }
+
+/** Circular-arrows icon for the rotate handle. */
+function drawRotateIcon(c, x, y) {
+  c.save();
+  c.strokeStyle = '#3a2f2a';
+  c.fillStyle = '#3a2f2a';
+  c.lineWidth = 1.5;
+  c.lineCap = 'round';
+  const r = 5.5;
+  for (const start of [-0.15 * Math.PI, 0.85 * Math.PI]) {
+    c.beginPath();
+    c.arc(x, y, r, start, start + 0.72 * Math.PI);
+    c.stroke();
+    const end = start + 0.72 * Math.PI;
+    const ex = x + r * Math.cos(end), ey = y + r * Math.sin(end);
+    const tx = -Math.sin(end), ty = Math.cos(end); // direction of travel
+    c.beginPath();
+    c.moveTo(ex + tx * 3, ey + ty * 3);
+    c.lineTo(ex - ty * 2.6 - tx * 0.6, ey + tx * 2.6 - ty * 0.6);
+    c.lineTo(ex + ty * 2.6 - tx * 0.6, ey - tx * 2.6 - ty * 0.6);
+    c.closePath();
+    c.fill();
+  }
+  c.restore();
+}
+
+// ---------------------------------------------------------------- floating mini toolbar (like Canva's)
+
+const miniBar = $('#miniBar');
+function placeMiniBar(sel) {
+  const show = sel && !(drag && drag.moved);
+  miniBar.hidden = !show;
+  if (!show) return;
+  const want = cropId ? 'crop' : 'edit';
+  if (miniBar.dataset.mode !== want) {
+    miniBar.dataset.mode = want;
+    miniBar.innerHTML = cropId
+      ? '<button type="button" data-act="done" class="text">Done</button>'
+      : `<button type="button" data-act="dup" title="Duplicate" aria-label="Duplicate">
+           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11" height="11" rx="2.2"/><path d="M15.5 5.5v-.3A1.7 1.7 0 0 0 13.8 3.5H6.2A1.7 1.7 0 0 0 4.5 5.2v7.6a1.7 1.7 0 0 0 1.7 1.7h.3"/><path d="M14 11.5v5M11.5 14h5"/></svg>
+         </button>
+         <button type="button" data-act="del" title="Delete" aria-label="Delete">
+           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15"/><path d="M9.5 7V5.2c0-.7.5-1.2 1.2-1.2h2.6c.7 0 1.2.5 1.2 1.2V7"/><path d="M6.5 7l.8 11.3c.1 1 .9 1.7 1.9 1.7h5.6c1 0 1.8-.7 1.9-1.7L17.5 7"/><path d="M10.3 10.8v5.4M13.7 10.8v5.4"/></svg>
+         </button>`;
+  }
+  const b = boundsOf(doc, sel);
+  const r = toScreen(b);
+  const bw = miniBar.offsetWidth || 96, bh = miniBar.offsetHeight || 40;
+  let top = r.y - bh - 14;
+  if (top < scroller.scrollTop + 6) top = r.y + r.h + ROT_GAP + 28; // no room above: go below the rotate handle
+  const left = clamp(r.x + r.w / 2 - bw / 2, 6, V.cssW - bw - 6);
+  miniBar.style.left = `${left}px`;
+  miniBar.style.top = `${top}px`;
+}
+miniBar.addEventListener('pointerdown', (e) => e.stopPropagation());
+miniBar.addEventListener('click', (e) => {
+  const act = e.target.closest('button')?.dataset.act;
+  if (act === 'dup') duplicateSelected();
+  else if (act === 'del') removeSelected();
+  else if (act === 'done') exitCrop();
+});
 
 new ResizeObserver(() => render()).observe(scroller);
 
@@ -376,17 +484,18 @@ function hitTest(p) {
 }
 
 function hitHandle(p, el, touch) {
-  const b = boundsOf(doc, el);
-  const pad = { x: b.x - 3 / V.ppi, y: b.y - 3 / V.ppi, w: b.w + 6 / V.ppi, h: b.h + 6 / V.ppi };
+  const f = selFrame(el);
+  const [lx, ly] = toLocal(f, p);
   const tol = (touch ? 16 : 9) / V.ppi;
   for (const h of handlesFor(el)) {
-    const [hx, hy] = handlePoint(pad, h);
-    if (Math.abs(p.x - hx) <= tol && Math.abs(p.y - hy) <= tol) return h;
+    const [hx, hy] = handleLocal(f, h);
+    const t = h === 'rot' ? tol + 4 / V.ppi : tol;
+    if (Math.abs(lx - hx) <= t && Math.abs(ly - hy) <= t) return h;
   }
   return null;
 }
 
-const CURSORS = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' };
+const CURSORS = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', rot: 'grab' };
 let drag = null;
 let lastTap = { id: null, t: 0 };
 
@@ -407,8 +516,11 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   const sel = selected();
   const h = sel && hitHandle(p, sel, touch);
-  if (h) {
-    drag = { kind: 'resize', id: sel.id, handle: h, start: p, orig: JSON.parse(JSON.stringify(sel)), b0: boundsOf(doc, sel), moved: false };
+  if (h === 'rot') {
+    const f = selFrame(sel);
+    drag = { kind: 'rotate', id: sel.id, start: p, c: { x: f.cx, y: f.cy }, a0: sel.angle || 0, p0: Math.atan2(p.y - f.cy, p.x - f.cx), moved: false };
+  } else if (h) {
+    drag = { kind: 'resize', id: sel.id, handle: h, start: p, orig: JSON.parse(JSON.stringify(sel)), b0: boundsOf(doc, sel), f0: selFrame(sel), moved: false };
   } else {
     const hit = hitTest(p);
     // double-tap on touch screens (dblclick isn't reliable with touch-action: none)
@@ -464,6 +576,13 @@ canvas.addEventListener('pointermove', (e) => {
     if (geo.ovY > 0.001) el.panY = clamp(drag.orig.panY + (2 * dy) / geo.ovY, -1, 1);
   } else if (drag.kind === 'resize') {
     resize(el, drag, p);
+  } else if (drag.kind === 'rotate') {
+    let a = drag.a0 + ((Math.atan2(p.y - drag.c.y, p.x - drag.c.x) - drag.p0) * 180) / Math.PI;
+    a = ((a + 180) % 360 + 360) % 360 - 180;
+    const snap = Math.round(a / 15) * 15;
+    if (!e.shiftKey && Math.abs(a - snap) < 4) a = snap; // snaps to 0°, 15°, 30°… (hold Shift for free rotation)
+    el.angle = Math.abs(a) < 0.05 ? 0 : a;
+    if (isStitch(el)) placeAt(el, drag.c.x, drag.c.y); // keep it turning around its own center
   }
   render();
   syncLive();
@@ -474,10 +593,11 @@ function endDrag() {
   const el = byId(drag.id);
   if (drag.moved && el) {
     if (isStitch(el)) snapStitch(doc, el);
+    if (el.angle === 0) delete el.angle;
     if (drag.kind !== 'pan') setHome(el);
     commit();
   }
-  canvas.style.cursor = drag.kind === 'pan' ? 'grab' : 'default';
+  canvas.style.cursor = drag.kind === 'pan' || drag.kind === 'rotate' ? 'grab' : 'default';
   drag = null;
   render();
 }
@@ -495,16 +615,18 @@ function resize(el, d, p) {
   const g = gridOf(doc);
 
   if (el.type === 'photo') {
+    // Work in the photo's own frame so rotated photos resize along their own edges.
+    const f0 = d.f0;
+    const [lx, ly] = toLocal(f0, p);
+    const Ax = -hx * f0.w / 2, Ay = -hy * f0.h / 2; // the fixed opposite side
+    let w = f0.w, h = f0.h;
     if (corner) {
-      const f = Math.max(Math.abs(p.x - ax) / b0.w, Math.abs(p.y - ay) / b0.h, 0.4 / Math.min(b0.w, b0.h));
-      el.w = b0.w * f; el.h = b0.h * f;
-    } else if (hx) {
-      el.w = Math.max(0.4, hx > 0 ? p.x - L : R - p.x);
-    } else {
-      el.h = Math.max(0.4, hy > 0 ? p.y - T : B - p.y);
-    }
-    el.x = hx < 0 ? R - el.w : hx > 0 ? L : el.x;
-    el.y = hy < 0 ? B - el.h : hy > 0 ? T : el.y;
+      const k = Math.max(Math.abs(lx - Ax) / f0.w, Math.abs(ly - Ay) / f0.h, 0.4 / Math.min(f0.w, f0.h));
+      w = f0.w * k; h = f0.h * k;
+    } else if (hx) w = Math.max(0.4, hx * (lx - Ax));
+    else h = Math.max(0.4, hy * (ly - Ay));
+    const [cx, cy] = toWorld(f0, [hx ? Ax + hx * w / 2 : 0, hy ? Ay + hy * h / 2 : 0]);
+    Object.assign(el, { w, h, x: cx - w / 2, y: cy - h / 2 });
     return;
   }
   if (el.type === 'frame') {
@@ -873,7 +995,7 @@ function swatches(container, colors, onClick, kind = null) {
   const add = document.createElement('label');
   add.className = 'swatch add';
   add.title = 'Add a color';
-  add.innerHTML = '<span aria-hidden="true">+</span>';
+  add.innerHTML = '';
   const input = document.createElement('input');
   input.type = 'color';
   input.setAttribute('aria-label', `Add a ${kind} color`);
@@ -1240,39 +1362,6 @@ async function saveImage() {
 
 // ---------------------------------------------------------------- context bar
 
-function buildContextBar() {
-  const bar = $('#contextBar');
-  const el = selected();
-  bar.classList.toggle('cropping', !!cropId);
-  if (!el) { bar.hidden = true; return; }
-  bar.hidden = false;
-  if (cropId) {
-    bar.innerHTML = '<span class="what">Cropping</span><span>Drag the photo to reposition · scroll or use the Zoom slider to scale</span><span class="spacer"></span><button data-act="done">Done</button>';
-  } else {
-    const name = el.type === 'photo' ? 'Photo'
-      : el.type === 'text' ? `“${el.text.split('\n')[0].slice(0, 18)}${el.text.length > 18 ? '…' : ''}”`
-        : el.type === 'frame' ? `${FRAMES.find((f) => f.id === el.style)?.name || 'Frame'} frame`
-          : MOTIFS.find((m) => m.id === el.motif)?.name || 'Motif';
-    const photoBtns = el.type === 'photo'
-      ? (images.get(el.imgId) ? '<button data-act="crop">Crop</button><button data-act="replace">Replace</button>' : '<button data-act="replace">Choose photo</button>')
-      : '';
-    bar.innerHTML = `<span class="what">${escapeHtml(name)}</span>${photoBtns}<button data-act="back" title="Send backward">Backward</button><button data-act="fwd" title="Bring forward">Forward</button><button data-act="dup">Duplicate</button><span class="spacer"></span><button data-act="del" class="danger">Delete</button>`;
-  }
-}
-$('#contextBar').addEventListener('click', (e) => {
-  const act = e.target.closest('button')?.dataset.act;
-  if (!act) return;
-  ({
-    done: exitCrop,
-    crop: () => enterCrop(selectedId),
-    replace: () => pickFiles(selectedId),
-    back: () => moveLayer(-1),
-    fwd: () => moveLayer(1),
-    dup: duplicateSelected,
-    del: removeSelected,
-  })[act]?.();
-});
-
 const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ---------------------------------------------------------------- sync panel with state
@@ -1310,7 +1399,6 @@ function sync() {
   $('#undoBtn').disabled = history.index <= 0;
   $('#redoBtn').disabled = history.index >= history.stack.length - 1;
   $('#zoomLabel').textContent = view.zoom === 1 ? 'Fit' : `${Math.round(view.zoom * 100)}%`;
-  buildContextBar();
   syncLive();
 }
 

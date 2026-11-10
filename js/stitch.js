@@ -52,10 +52,12 @@ function keyFor(el) {
 }
 
 export function bitmapFor(el) {
-  const key = keyFor(el);
+  const angle = el.type === 'frame' ? 0 : Math.round((el.angle || 0) * 10) / 10;
+  const key = `${keyFor(el)}|a${angle}`;
   let bm = cache.get(key);
   if (!bm) {
     bm = el.type === 'text' ? textBitmap(el) : el.type === 'motif' ? motifBitmap(el) : frameBitmap(el);
+    if (angle) bm = rotateBitmap(bm, angle);
     bm.key = key;
     cache.set(key, bm);
     if (cache.size > 400) cache.delete(cache.keys().next().value);
@@ -441,4 +443,51 @@ export function motifPreviewBitmap(id) {
 
 export function framePreviewBitmap(style) {
   return bitmapFor({ type: 'frame', style, cols: 15, rows: 11 });
+}
+
+/**
+ * Rotates a stitch bitmap by any angle. Each stitch's center is carried to its new spot and joined to
+ * its stitched neighbours with a line (so thin strokes stay connected), and the target grid is also
+ * sampled back into the source so solid areas stay solid.
+ */
+function rotateBitmap(bm, deg) {
+  const a = (deg * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
+  const W = Math.ceil(Math.abs(bm.w * c) + Math.abs(bm.h * sn)) + 2;
+  const H = Math.ceil(Math.abs(bm.w * sn) + Math.abs(bm.h * c)) + 2;
+  const out = makeBitmap(W, H);
+  const scx = bm.w / 2, scy = bm.h / 2, tcx = W / 2, tcy = H / 2;
+  const on = (x, y) => x >= 0 && y >= 0 && x < bm.w && y < bm.h && bm.data[y * bm.w + x] === 1;
+  const fwd = (x, y) => {
+    const dx = x + 0.5 - scx, dy = y + 0.5 - scy;
+    return [Math.floor(dx * c - dy * sn + tcx), Math.floor(dx * sn + dy * c + tcy)];
+  };
+  const plot = (x, y) => { if (x >= 0 && y >= 0 && x < W && y < H) out.data[y * W + x] = 1; };
+  const line = ([x0, y0], [x1, y1]) => {
+    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
+    for (;;) {
+      plot(x0, y0);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+  };
+  for (let y = 0; y < bm.h; y++) {
+    for (let x = 0; x < bm.w; x++) {
+      if (!on(x, y)) continue;
+      const p0 = fwd(x, y);
+      plot(...p0);
+      for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [-1, 1]]) if (on(x + dx, y + dy)) line(p0, fwd(x + dx, y + dy));
+    }
+  }
+  for (let ty = 0; ty < H; ty++) {
+    for (let tx = 0; tx < W; tx++) {
+      const dx = tx + 0.5 - tcx, dy = ty + 0.5 - tcy;
+      const sx = Math.floor(dx * c + dy * sn + scx), sy = Math.floor(-dx * sn + dy * c + scy);
+      // only fill from solid areas, so one-stitch lines don't get doubled
+      if (on(sx, sy) && ((on(sx - 1, sy) || on(sx + 1, sy)) && (on(sx, sy - 1) || on(sx, sy + 1)))) out.data[ty * W + tx] = 1;
+    }
+  }
+  return trim(out);
 }

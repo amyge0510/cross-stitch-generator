@@ -25,8 +25,18 @@ export function snapStitch(doc, el) {
   el.y = g.gy + row * g.p;
 }
 
+/** A photo's own rectangle and rotation (degrees), before rotating. */
+export function photoFrame(el) {
+  return { cx: el.x + el.w / 2, cy: el.y + el.h / 2, w: el.w, h: el.h, angle: el.angle || 0 };
+}
+
 export function boundsOf(doc, el) {
-  if (el.type === 'photo') return { x: el.x, y: el.y, w: el.w, h: el.h };
+  if (el.type === 'photo') {
+    if (!el.angle) return { x: el.x, y: el.y, w: el.w, h: el.h };
+    const a = (el.angle * Math.PI) / 180, c = Math.abs(Math.cos(a)), sn = Math.abs(Math.sin(a));
+    const W = el.w * c + el.h * sn, H = el.w * sn + el.h * c;
+    return { x: el.x + el.w / 2 - W / 2, y: el.y + el.h / 2 - H / 2, w: W, h: H };
+  }
   const g = gridOf(doc);
   const bm = bitmapFor(el);
   const { col, row } = cellPos(doc, el);
@@ -265,11 +275,32 @@ export function drawScene(ctx, doc, images, o) {
     }
   }
 
+  let curShadows = false;
   const drawElements = (shadows) => {
+    curShadows = shadows;
     for (const el of doc.elements) {
       if (el.id === o.hiddenId) continue;
       if (el.type === 'photo') {
         const image = images.get(el.imgId);
+        ctx.save();
+        if (el.angle) {
+          const cx = toX(el.x + el.w / 2), cy = toY(el.y + el.h / 2);
+          ctx.translate(cx, cy);
+          ctx.rotate((el.angle * Math.PI) / 180);
+          ctx.translate(-cx, -cy);
+        }
+        drawPhotoEl(el, image);
+        ctx.restore();
+      } else {
+        const bm = bitmapFor(el);
+        const { col, row } = cellPos(doc, el);
+        paintStitches(ctx, bm, toX(g.gx) + col * s, toY(g.gy) + row * s, s, el.color, o.stitches);
+      }
+    }
+  };
+  function drawPhotoEl(el, image) {
+    {
+      {
         if (o.photos === false || !image) {
           if (o.placeholders === 'print') drawPhotoOutline(ctx, el, toX, toY, ppi);
           else if (!image && o.placeholders === 'editor') drawPhoto(ctx, el, null, toX, toY, ppi, false, 'editor');
@@ -280,16 +311,12 @@ export function drawScene(ctx, doc, images, o) {
             ctx.fillStyle = g;
             ctx.fillRect(toX(el.x), toY(el.y), el.w * ppi, el.h * ppi);
           }
-          continue;
+          return;
         }
-        drawPhoto(ctx, el, image, toX, toY, ppi, shadows, o.placeholders);
-      } else {
-        const bm = bitmapFor(el);
-        const { col, row } = cellPos(doc, el);
-        paintStitches(ctx, bm, toX(g.gx) + col * s, toY(g.gy) + row * s, s, el.color, o.stitches);
+        drawPhoto(ctx, el, image, toX, toY, ppi, curShadows, o.placeholders);
       }
     }
-  };
+  }
 
   if (o.ghostOutside) {
     ctx.save();
