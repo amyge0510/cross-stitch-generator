@@ -1268,11 +1268,11 @@ function readPrintForm() {
   for (const k of ['holes', 'photos', 'guide', 'paperFill', 'trim', 'chart']) printOpts[k] = f.elements[k].checked;
 }
 function updatePrintPreview() {
-  const { fit, trimDropped } = printPreview(doc, images, printOpts, $('#printPreview'));
-  const st = stats(doc);
+  const { fit } = printPreview(doc, images, printOpts, $('#printPreview'));
+  // Only speak up when something's wrong: a card too big to print at actual size.
   $('#printNote').textContent = fit < 1
-    ? `This card is bigger than one ${PAPERS[printOpts.paper].name} sheet, so it will print at ${Math.round(fit * 100)}%. Pick a smaller canvas for an actual-size template.`
-    : `Prints at actual size: ${inchLabel(doc.w)} × ${inchLabel(doc.h)}, ${st.holes} holes to punch.${trimDropped ? ' Trim marks are left off so it fits on the sheet.' : ''}`;
+    ? `This card is bigger than one ${PAPERS[printOpts.paper].name} sheet, so it will print at ${Math.round(fit * 100)}%. Pick a smaller size for an actual-size template.`
+    : '';
 }
 function openPrint() {
   if (cropId) exitCrop();
