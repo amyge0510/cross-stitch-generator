@@ -38,13 +38,36 @@ export const nativeSize = (f) => (f.kind === 'chart' ? Math.round(CHART_FONTS[f.
  */
 export const CARD_PITCH = 1 / 14;
 export const MAX_STITCH = 0.11; // inches between holes (2.8 mm)
-export const MIN_STITCH = 0.04; // (1 mm)
+export const MIN_STITCH = 0.06; // (1.5 mm) smaller than this is needlessly fine
+/**
+ * n: each charted stitch becomes n×n stitches (big letters). d: each d×d block of the chart becomes one
+ * stitch (small letters from a very detailed chart, e.g. Viceroy), so stitches stay a regular size.
+ */
 export function textStitch(el) {
   const f = fontById(el.font);
   const c = f.kind === 'chart' ? CHART_FONTS[f.id].capHeight : 1;
   const capH = Math.max(1, el.size) * CARD_PITCH * CAP_RATIO;
+  const s1 = capH / c;
+  if (s1 < MIN_STITCH) {
+    const d = Math.min(3, Math.ceil(MIN_STITCH / s1 - 1e-9));
+    return { n: 1, d, s: s1 * d };
+  }
   const n = Math.max(1, Math.ceil(capH / (c * MAX_STITCH) - 1e-9));
-  return { n, s: Math.max(MIN_STITCH, capH / (c * n)) };
+  return { n, d: 1, s: capH / (c * n) };
+}
+
+/** Each d×d block of the chart becomes one stitch if enough of it is stitched (keeps thin strokes joined). */
+function downsample(bm, d) {
+  const W = Math.ceil(bm.w / d), H = Math.ceil(bm.h / d);
+  const out = makeBitmap(W, H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let n = 0;
+      for (let yy = y * d; yy < Math.min(bm.h, y * d + d); yy++) for (let xx = x * d; xx < Math.min(bm.w, x * d + d); xx++) n += bm.data[yy * bm.w + xx];
+      if (n >= Math.max(1, Math.floor(d * d * 0.25))) out.data[y * W + x] = 1;
+    }
+  }
+  return trim(out);
 }
 
 // Canvas px per stitch when rasterizing text: fewer for big letters so typing stays fast.
@@ -61,7 +84,7 @@ export function fontsChanged() {
 
 function keyFor(el) {
   switch (el.type) {
-    case 'text': return `t|${el.text}|${el.font}|${textStitch(el).n}|${el.align}|${fontEpoch}`;
+    case 'text': { const t = textStitch(el); return `t|${el.text}|${el.font}|${t.n}|${t.d}|${el.align}|${fontEpoch}`; }
     case 'motif': return `m|${el.motif}|${el.scale}|${el.rot}|${el.flip}`;
     case 'frame': return `f|${el.style}|${el.cols}|${el.rows}`;
     default: return null;
@@ -296,8 +319,8 @@ function chartText(el, font) {
     }
   }
   const out = trim(bm);
-  const { n } = textStitch(el);
-  return n > 1 ? scaleUp(out, n) : out;
+  const { n, d } = textStitch(el);
+  return n > 1 ? scaleUp(out, n) : d > 1 ? downsample(out, d) : out;
 }
 
 function scaleUp(bm, k) {
@@ -479,6 +502,17 @@ export function charLeft(el, i) {
   const line = String(el.text || '').split('\n')[0];
   const L = setLine(CHART_FONTS[f.id], f.id, line);
   const x = L.lefts[i];
-  const { n, s } = textStitch(el);
-  return x === undefined ? 0 : x * n * s;
+  const { n, d, s } = textStitch(el);
+  return x === undefined ? 0 : ((x * n) / d) * s;
+}
+
+/** Distance (inches) from the top of a one-line text to its baseline (bottom of the baseline row). */
+export function baselineY(el) {
+  const f = fontById(el.font);
+  if (f.kind !== 'chart') return 0;
+  const line = String(el.text || '').split('\n')[0];
+  const L = setLine(CHART_FONTS[f.id], f.id, line);
+  const top = L.cells.length ? Math.min(...L.cells.map((c) => c[1])) : 0;
+  const { n, d, s } = textStitch(el);
+  return (((1 - top) * n) / d) * s;
 }

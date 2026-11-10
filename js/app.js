@@ -40,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v19';
+const STORE = 'stitched:v20';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -1310,20 +1310,7 @@ function buildPanel() {
   // text
   buildLetterChips();
   $('#addTextBtn').addEventListener('click', addTextBox);
-  // One size for the selected text (or all text): every box gets exactly the same letter size.
-  $('#textSize').addEventListener('input', (e) => {
-    const v = +e.target.value;
-    for (const el of targets((x) => x.type === 'text')) {
-      keepAnchor(el, () => { el.size = v; el.baseSize = v; }, { vertical: true });
-      if (el.tpl) el.custom = true;
-      if (el.home) { delete el.home.mw; delete el.home.mh; }
-      setHome(el);
-    }
-    render();
-    syncLive();
-    commitSoon();
-  });
-  $('#textSize').addEventListener('change', flush);
+
 
   // top bar, print dialog & stage
   $('#printBtn').addEventListener('click', openPrint);
@@ -1545,7 +1532,32 @@ function syncWords() {
       input.addEventListener('focus', () => select(el.id, { scroll: false }));
       input.addEventListener('blur', flush);
       input.addEventListener('change', flush);
-      wrap.append(head, input);
+      const row = document.createElement('div');
+      row.className = 'word-row';
+      const size = document.createElement('div');
+      size.className = 'size-step';
+      size.innerHTML = `<button type="button" data-d="-1" aria-label="Smaller">−</button><input type="number" inputmode="numeric" min="6" max="160" aria-label="Text ${i + 1} size"><button type="button" data-d="1" aria-label="Larger">+</button>`;
+      const num = size.querySelector('input');
+      num.value = Math.round(el.size);
+      const setSize = (v) => {
+        const t = byId(el.id);
+        if (!t || !Number.isFinite(v)) return;
+        v = clamp(Math.round(v), 6, 160);
+        keepAnchor(t, () => { t.size = v; t.baseSize = v; }, { vertical: true });
+        if (t.tpl) t.custom = true; // a size the person chose sticks when the font changes
+        if (t.home) { delete t.home.mw; delete t.home.mh; }
+        setHome(t);
+        num.value = v;
+        commit();
+        render();
+      };
+      size.addEventListener('click', (ev) => {
+        const d = +ev.target.closest('button')?.dataset.d;
+        if (d) setSize(Math.round(byId(el.id).size) + d * 2);
+      });
+      num.addEventListener('change', () => setSize(+num.value));
+      row.append(input, size);
+      wrap.append(head, row);
       box.appendChild(wrap);
     });
   }
@@ -1553,6 +1565,8 @@ function syncWords() {
     const el = byId(wrap.dataset.id);
     const input = wrap.querySelector('input, textarea');
     if (el && document.activeElement !== input && input.value !== el.text) input.value = el.text;
+    const num = wrap.querySelector('.size-step input');
+    if (el && num && document.activeElement !== num) num.value = Math.round(el.size);
     wrap.classList.toggle('on', selIds.has(wrap.dataset.id));
   }
   setOn($('#letterChips'), currentLetter());
@@ -1577,13 +1591,7 @@ const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&l
 
 /** Light sync for things that change continuously while dragging/sliding. */
 function syncLive() {
-  const ts = targets((x) => x.type === 'text');
-  const slider = $('#textSize');
-  if (ts.length && document.activeElement !== slider) slider.value = Math.round(ts[0].size);
-  const sizes = new Set(ts.map((t) => Math.round(t.size)));
-  $('#textSizeOut').textContent = !ts.length ? '' : sizes.size > 1 ? 'mixed'
-    : `${((ts[0].size * doc.pitch * 0.72)).toFixed(2)}″ tall`;
-  $('#textSizeLabel').textContent = selection().some((x) => x.type === 'text') ? 'Size · selected' : 'Size · all text';
+
   const threadColor = (selection().find(isStitch) || doc.elements.find(isStitch))?.color || prefs.thread;
   setOn($('#paperSwatches'), doc.paper.toUpperCase());
   setOn($('#threadSwatches'), threadColor.toUpperCase());

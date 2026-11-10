@@ -13,7 +13,7 @@ Most people want something simple, so the steps are short and template-first:
 3. **Colors**: four preset looks: Classic, Maroon, Noir, Navy & gold.
 4. **Paper** and **Thread**: pick from the swatches. Thread color applies to every stitch.
 5. **Photo**: uploads fill the template's photo spots in order. Photo style (Original, Classic B&W, Soft B&W, Noir) applies to all photos, or to the one you tap on the card; a tapped photo can also change shape.
-6. **Text**: one box per piece of text, plus **Add text**. Three lettering styles, all real hand-charted cross-stitch alphabets stitched exactly as charted: **Viceroy** (elegant script), **Antique** (a flourished script, upper and lower case) and **Simple** (DMC's classic script with numbers). Numbers and symbols Viceroy and Antique don't include come from Simple. Letters are always stitched exactly as charted; only the stitch size changes (1–2.8 mm). Past the largest stitch, each charted stitch becomes 2×2 (then 3×3) smaller stitches, so big letters are the same picture stitched finer.
+6. **Text**: one box per piece of text, plus **Add text**. Three lettering styles, all real hand-charted cross-stitch alphabets stitched exactly as charted: **Viceroy** (elegant script), **Antique** (a flourished script, upper and lower case) and **Simple** (DMC's classic script with numbers). Numbers and symbols Viceroy and Antique don't include come from Simple. Letters are always stitched from the chart; only the stitch size changes (1.5–2.8 mm). Past the largest stitch, each charted stitch becomes 2×2 (then 3×3) smaller stitches; when a very detailed chart (Viceroy) would need stitches finer than 1.5 mm, each 2×2 block of the chart becomes one regular stitch instead.
 
 **Print punch template** (top right) prints an actual-size template with a dot at every hole to pierce and a faint X for each stitch. Options: photos, paper color and trim marks. You can also save a 300 dpi image from the print window.
 
@@ -21,7 +21,7 @@ Switching templates keeps your photos and text. Everything on the card can still
 
 - **Select several**: Shift/Cmd-click, drag a box around pieces on empty paper, or Cmd+A for everything. They move, duplicate and delete together.
 - **Alignment guides**: while dragging, pieces snap (with a pink guide line) when an edge or center lines up with another piece or the card's center.
-- **Changes apply to the selection**: lettering, thread color, photo style and text **Size** change only the selected pieces, or everything when nothing is selected. The Size slider gives every targeted text box exactly the same size.
+- **Changes apply to the selection**: lettering, thread color and photo style change only the selected pieces, or everything when nothing is selected. Each text box has its own size control (− / number / +) beside it.
 
 Everything runs in the browser; photos never leave the device. The design is autosaved to local storage, with undo/redo (⌘Z / ⇧⌘Z).
 

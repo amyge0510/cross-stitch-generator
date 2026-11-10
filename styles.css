@@ -381,3 +381,12 @@ details.more > :last-child { padding-bottom: 16px; }
 .mini-bar button[data-act="del"]:hover { color: var(--accent); }
 .mini-bar button.text { width: auto; padding: 0 14px; font-weight: 600; }
 .slider.text-size { grid-template-columns: 96px 1fr 70px; margin: 0 0 14px; }
+
+/* text box + its size control, side by side */
+.word-row { display: flex; gap: 8px; align-items: stretch; }
+.word-row > input, .word-row > textarea { flex: 1; min-width: 0; }
+.size-step { display: flex; align-items: center; border: 1px solid var(--card-line); border-radius: 12px; background: #fff; flex: none; }
+.size-step button { border: 0; background: none; width: 30px; height: 100%; min-height: 40px; font-size: 18px; color: var(--ink); border-radius: 12px; }
+.size-step button:hover { background: #f1ece6; }
+.size-step input { width: 38px; border: 0; background: none; text-align: center; font: 15px var(--mono); padding: 0; -moz-appearance: textfield; }
+.size-step input::-webkit-outer-spin-button, .size-step input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
