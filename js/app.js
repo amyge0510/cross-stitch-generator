@@ -1,5 +1,5 @@
 import { MOTIFS, FRAMES } from './motifs.js';
-import { FONTS, fontCss, fontsChanged, bitmapFor, nativeSize } from './stitch.js';
+import { FONTS, fontCss, fontsChanged, bitmapFor, nativeSize, fontById } from './stitch.js';
 import { FILTERS, applyFilter } from './filters.js';
 import {
   drawScene, gridOf, boundsOf, snapStitch, photoGeometry, isStitch, paintStitches, stats, EDGES, filteredImage, photoFrame,
@@ -40,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v20';
+const STORE = 'stitched:v21';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -1251,16 +1251,14 @@ function updateSelected(fn, { anchor = false, live = false } = {}) {
 }
 
 /** Thread color goes on every stitch on the card. */
-/** Pieces a panel change applies to: the selected ones of that kind, or all of them if none are selected. */
-function targets(test) {
-  const sel = selection().filter(test);
-  return sel.length ? sel : doc.elements.filter(test);
-}
-
-/** Thread color for the selected stitching (or all stitching when nothing is selected). */
+/*
+ * Card-wide steps (Colors, Paper, Thread, Photo style, the big Lettering buttons) always change the whole
+ * card. Anything for a single text (its font, color, size) lives on that text's own row in the Text step.
+ */
+/** Thread color for all stitching on the card. */
 function setThread(c) {
   prefs.thread = c;
-  for (const x of targets(isStitch)) x.color = c;
+  for (const x of doc.elements) if (isStitch(x)) x.color = c;
   commit();
   render();
 }
@@ -1398,7 +1396,7 @@ function buildStyleChips() {
     }
     b.append(cv, document.createTextNode(f.name));
     b.addEventListener('click', () => {
-      const photos = targets((x) => x.type === 'photo');
+      const photos = allPhotos();
       if (!photos.length) { toast('This design has no photo spots. Pick a template with a photo.'); return; }
       for (const p of photos) p.filter = f.id;
       commit();
@@ -1410,7 +1408,12 @@ function buildStyleChips() {
 
 /** The lettering style in use: whatever the text on the card uses, else the last one picked. */
 function currentLetter() {
-  return (selection().find((e) => e.type === 'text') || doc.elements.find((e) => e.type === 'text'))?.font || prefs.letter || 'viceroy';
+  return doc.elements.find((e) => e.type === 'text')?.font || prefs.letter || 'viceroy';
+}
+/** The lettering every text shares, or '' when they differ. */
+function sharedLetter() {
+  const fs = new Set(doc.elements.filter((e) => e.type === 'text').map((e) => e.font));
+  return fs.size === 1 ? [...fs][0] : fs.size ? '' : prefs.letter || 'viceroy';
 }
 
 function buildLetterChips() {
@@ -1422,9 +1425,8 @@ function buildLetterChips() {
     b.dataset.id = f.id;
     b.append(fontPreview(f, f.id === 'simple' ? 'Amy' : 'AJ'), Object.assign(document.createElement('small'), { textContent: f.name }));
     b.addEventListener('click', () => {
-      const sel = selection().filter((x) => x.type === 'text');
-      if (!sel.length) { prefs.letter = f.id; prefs.font = f.id; }
-      for (const el of targets((x) => x.type === 'text')) el.font = f.id;
+      prefs.letter = f.id; prefs.font = f.id;
+      for (const el of doc.elements) if (el.type === 'text') el.font = f.id;
       layoutTexts(doc); // same words, same spots, sized for the new lettering
       commit();
       render();
@@ -1557,7 +1559,44 @@ function syncWords() {
       });
       num.addEventListener('change', () => setSize(+num.value));
       row.append(input, size);
-      wrap.append(head, row);
+      // this text's own lettering and thread color
+      const opts = document.createElement('div');
+      opts.className = 'word-opts';
+      const fonts = document.createElement('div');
+      fonts.className = 'mini-fonts';
+      for (const f of FONTS) {
+        const fb = document.createElement('button');
+        fb.type = 'button';
+        fb.dataset.id = f.id;
+        fb.textContent = f.name;
+        fb.addEventListener('click', () => {
+          const t = byId(el.id);
+          if (!t) return;
+          t.font = f.id;
+          layoutTexts(doc, [t]);
+          commit();
+          render();
+        });
+        fonts.appendChild(fb);
+      }
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'color-dot';
+      dot.setAttribute('aria-label', `Text ${i + 1} color`);
+      const pal = document.createElement('div');
+      pal.className = 'swatches mini-pal';
+      pal.hidden = true;
+      swatches(pal, THREAD_COLORS, (c) => {
+        const t = byId(el.id);
+        if (!t) return;
+        t.color = c;
+        pal.hidden = true;
+        commit();
+        render();
+      }, 'thread');
+      dot.addEventListener('click', () => { pal.hidden = !pal.hidden; });
+      opts.append(fonts, dot);
+      wrap.append(head, row, opts, pal);
       box.appendChild(wrap);
     });
   }
@@ -1567,9 +1606,14 @@ function syncWords() {
     if (el && document.activeElement !== input && input.value !== el.text) input.value = el.text;
     const num = wrap.querySelector('.size-step input');
     if (el && num && document.activeElement !== num) num.value = Math.round(el.size);
+    if (el) {
+      setOn(wrap.querySelector('.mini-fonts'), fontById(el.font).id);
+      wrap.querySelector('.color-dot').style.background = el.color;
+      setOn(wrap.querySelector('.mini-pal'), el.color.toUpperCase());
+    }
     wrap.classList.toggle('on', selIds.has(wrap.dataset.id));
   }
-  setOn($('#letterChips'), currentLetter());
+  setOn($('#letterChips'), sharedLetter());
 }
 
 async function saveImage() {
@@ -1592,10 +1636,11 @@ const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&l
 /** Light sync for things that change continuously while dragging/sliding. */
 function syncLive() {
 
-  const threadColor = (selection().find(isStitch) || doc.elements.find(isStitch))?.color || prefs.thread;
+  const cols = new Set(doc.elements.filter(isStitch).map((x) => x.color.toUpperCase()));
+  const threadColor = cols.size === 1 ? [...cols][0] : cols.size ? '' : prefs.thread;
   setOn($('#paperSwatches'), doc.paper.toUpperCase());
   setOn($('#threadSwatches'), threadColor.toUpperCase());
-  const look = LOOKS.find((l) => l.paper === doc.paper.toUpperCase() && l.thread === threadColor.toUpperCase());
+  const look = threadColor && LOOKS.find((l) => l.paper === doc.paper.toUpperCase() && l.thread === threadColor.toUpperCase());
   setOn($('#lookChips'), look ? look.name : '');
 }
 
@@ -1613,8 +1658,7 @@ function sync() {
   const photos = allPhotos();
   const shared = photos.length && photos.every((p) => p.filter === photos[0].filter) ? photos[0].filter : '';
   const selPhoto = selectedPhoto();
-  setOn($('#styleChips'), selPhoto ? selPhoto.filter || 'original' : shared);
-  $('#styleTarget').textContent = selPhoto ? '· selected photo' : '';
+  setOn($('#styleChips'), shared);
   $('#photoEdit').hidden = !selPhoto;
   if (selPhoto) setOn($('#shapeChips'), currentShape(selPhoto));
 

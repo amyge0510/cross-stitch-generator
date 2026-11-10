@@ -390,3 +390,13 @@ details.more > :last-child { padding-bottom: 16px; }
 .size-step button:hover { background: #f1ece6; }
 .size-step input { width: 38px; border: 0; background: none; text-align: center; font: 15px var(--mono); padding: 0; -moz-appearance: textfield; }
 .size-step input::-webkit-outer-spin-button, .size-step input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* per-text font and color, under each text box */
+.word-opts { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.mini-fonts { display: inline-flex; background: #fff; border: 1px solid var(--card-line); border-radius: 999px; padding: 2px; flex: 1; min-width: 0; }
+.mini-fonts button { flex: 1; border: 0; background: none; border-radius: 999px; padding: 5px 4px; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.mini-fonts button.on { background: var(--ink); color: #fff; }
+.color-dot { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--card-line); flex: none; padding: 0; }
+.mini-pal { margin-top: 8px; padding: 8px; background: #fff; border: 1px solid var(--card-line); border-radius: 12px; }
+.mini-pal .swatch { width: 24px; height: 24px; }
+.word-field.on .word-row > input, .word-field.on .word-row > textarea { border-color: var(--accent); }

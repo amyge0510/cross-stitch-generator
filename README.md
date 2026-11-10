@@ -21,7 +21,7 @@ Switching templates keeps your photos and text. Everything on the card can still
 
 - **Select several**: Shift/Cmd-click, drag a box around pieces on empty paper, or Cmd+A for everything. They move, duplicate and delete together.
 - **Alignment guides**: while dragging, pieces snap (with a pink guide line) when an edge or center lines up with another piece or the card's center.
-- **Changes apply to the selection**: lettering, thread color and photo style change only the selected pieces, or everything when nothing is selected. Each text box has its own size control (− / number / +) beside it.
+- **Per-text settings live on each text's row**: its words, size (− / number / +), lettering and thread color. The Colors, Paper, Thread, Photo style and "Lettering for all text" steps always change the whole card.
 
 Everything runs in the browser; photos never leave the device. The design is autosaved to local storage, with undo/redo (⌘Z / ⇧⌘Z).
 
