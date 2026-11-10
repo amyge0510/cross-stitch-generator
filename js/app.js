@@ -14,7 +14,6 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 // ---------------------------------------------------------------- presets
 
 const SIZES = [
-  { w: 3, h: 4, note: 'mini' },
   { w: 4, h: 6, note: 'postcard' },
   { w: 5, h: 7, note: 'card' },
   { w: 6, h: 6, note: 'square' },
@@ -41,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v5';
+const STORE = 'stitched:v6';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -962,7 +961,7 @@ function buildTemplates() {
     b.type = 'button';
     b.className = 'template';
     b.dataset.id = t.id;
-    b.innerHTML = `<div class="thumb"><canvas></canvas></div><strong>${t.name}</strong><small>${t.note}</small>`;
+    b.innerHTML = `<div class="thumb"><canvas></canvas></div><strong>${t.name}</strong>`;
     b.addEventListener('click', () => applyTemplate(t.id));
     grid.appendChild(b);
   }
@@ -975,7 +974,7 @@ function renderTemplateThumbs() {
     const t = templateById(b.dataset.id);
     const cv = b.querySelector('canvas');
     const d = buildTemplate(t, { pitch: DEFAULT_PITCH, uid });
-    const ppi = Math.min(108 / t.w, 80 / t.h);
+    const ppi = Math.min(76 / t.w, 60 / t.h);
     cv.width = Math.round(t.w * ppi * dpr);
     cv.height = Math.round(t.h * ppi * dpr);
     cv.style.width = `${t.w * ppi}px`;

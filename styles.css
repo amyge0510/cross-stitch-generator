@@ -306,16 +306,16 @@ dialog::backdrop { background: rgba(42, 32, 28, 0.45); }
 }
 
 /* ---------- templates & simple flow ---------- */
-.template-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.template-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .template {
   border: 1px solid var(--card-line); background: #fff; border-radius: 12px; padding: 6px 6px 8px;
   display: flex; flex-direction: column; align-items: stretch; gap: 6px; text-align: left;
 }
 .template:hover { border-color: #cbbfb1; }
 .template.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
-.template .thumb { height: 92px; display: grid; place-items: center; background: var(--stage); border-radius: 8px; }
+.template .thumb { height: 70px; display: grid; place-items: center; background: var(--stage); border-radius: 8px; }
 .template canvas { display: block; box-shadow: 0 2px 6px rgba(40, 25, 15, 0.18); }
-.template strong { font-size: 13px; font-weight: 600; line-height: 1.1; }
+.template strong { font-size: 12.5px; font-weight: 600; line-height: 1.1; text-align: center; }
 .template small { font: 10px/1.2 var(--mono); color: var(--muted); }
 
 .filters.compact { grid-template-columns: repeat(4, 1fr); }
@@ -349,7 +349,6 @@ details.more > :last-child { padding-bottom: 16px; }
 .panel > .micro { margin-top: 0; }
 
 @media (max-width: 520px) {
-  .template-grid { grid-template-columns: repeat(2, 1fr); }
 }
 .credits { margin: 0; text-align: center; font-size: 11px; line-height: 1.5; color: var(--muted); }
 .credits a { color: inherit; }
@@ -366,3 +365,6 @@ details.more > :last-child { padding-bottom: 16px; }
 }
 .word-del:hover { color: var(--accent); background: var(--accent-soft); }
 #sec-words .fonts { margin: 0 0 12px; }
+.template canvas { max-width: 100%; height: auto !important; }
+.template { align-items: center; padding: 5px 5px 7px; }
+.template .thumb { width: 100%; }

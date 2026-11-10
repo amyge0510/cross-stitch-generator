@@ -13,30 +13,21 @@ const PHOTO = (x, y, w, h, extra = {}) => ({ type: 'photo', x, y, w, h, ...extra
 // Recreations of real cards people have stitched. Positions were measured from reference photos.
 export const TEMPLATES = [
   {
-    // White mat, color photo, a script initial overlapping two opposite corners of the photo.
-    id: 'initials', name: 'Initials', note: 'white mat, two initials',
-    w: 7, h: 5, paper: '#FBF8F2', thread: '#C1121F', font: 'viceroy',
+    // "where love grows": chunky words around a black & white photo, and a little heart.
+    // Simple lettering at exactly 2× its charted size, kept off the photo so every word reads clearly.
+    id: 'words', name: 'Love note',
+    w: 10, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
     elements: [
-      PHOTO(1.66, 0.97, 3.6, 2.73, { filter: 'original' }),
-      { type: 'text', slot: 'i1', text: 'A', cx: 1.43, cy: 1.08, h: 2.5, maxW: 2.5, maxH: 1.9 },
-      { type: 'text', slot: 'i2', text: 'J', cx: 5.3, cy: 3.77, h: 2.5, maxW: 2.5, maxH: 1.9 },
-    ],
-  },
-  {
-    // "where love grows": words around a black & white photo, and a little heart.
-    id: 'words', name: 'Love note', note: 'words around the photo',
-    w: 7, h: 5, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
-    elements: [
-      PHOTO(1.68, 0.96, 3.7, 2.95, { filter: 'classic' }),
-      { type: 'text', slot: 'w1', text: 'where', cx: 1.66, cy: 0.91, h: 0.8, maxW: 2.9, maxH: 1.4 },
-      { type: 'text', slot: 'w2', text: 'love', cx: 5.75, cy: 1.35, h: 0.8, maxW: 2.2, maxH: 1.4 },
-      { type: 'text', slot: 'w3', text: 'grows', cx: 4.15, cy: 3.99, h: 0.8, maxW: 2.9, maxH: 1.5 },
-      { type: 'motif', motif: 'heart', cx: 1.59, cy: 3.37, h: 0.55 },
+      PHOTO(3.0, 2.1, 4.6, 3.5, { filter: 'classic' }),
+      { type: 'text', slot: 'w1', text: 'where', cx: 2.75, cy: 1.2, h: 1.57, maxW: 5.0, maxH: 1.75 },
+      { type: 'text', slot: 'w2', text: 'love', cx: 8.15, cy: 1.75, h: 1.57, maxW: 3.6, maxH: 1.75 },
+      { type: 'text', slot: 'w3', text: 'grows', cx: 6.35, cy: 6.6, h: 1.57, maxW: 4.8, maxH: 1.75 },
+      { type: 'motif', motif: 'heart', cx: 2.05, cy: 4.9, h: 0.85 },
     ],
   },
   {
     // Cream monogram initials on a maroon mat around a black & white wedding photo.
-    id: 'monogram', name: 'Monogram', note: 'cream on maroon',
+    id: 'monogram', name: 'Monogram',
     w: 7, h: 5, paper: '#5A1A20', thread: '#F1E6CF', font: 'viceroy',
     elements: [
       PHOTO(1.32, 0.93, 4.34, 2.87, { filter: 'classic' }),
@@ -46,7 +37,7 @@ export const TEMPLATES = [
   },
   {
     // A big color photo, "you + me" stitched over its corner, sparkles around.
-    id: 'youme', name: 'You + me', note: 'words & sparkles',
+    id: 'youme', name: 'You + me',
     w: 7, h: 5, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
     elements: [
       PHOTO(0.83, 0.87, 5.0, 3.3, { filter: 'original' }),
@@ -60,17 +51,7 @@ export const TEMPLATES = [
     ],
   },
   {
-    // Two blocky rose sprigs climbing the left edge of a portrait photo.
-    id: 'roses', name: 'Roses', note: 'red rose sprigs',
-    w: 6, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
-    elements: [
-      PHOTO(2.4, 1.6, 3.2, 4.4, { filter: 'original' }),
-      { type: 'motif', motif: 'rose-sprig', cx: 2.35, cy: 2.65, h: 2.0 },
-      { type: 'motif', motif: 'rose-sprig', cx: 1.6, cy: 4.75, h: 2.0, flip: true },
-    ],
-  },
-  {
-    id: 'blank', name: 'Blank', note: 'start from scratch',
+    id: 'blank', name: 'Blank',
     w: 7, h: 5, paper: '#FBF8F2', thread: '#C1121F', font: 'viceroy',
     elements: [],
   },
