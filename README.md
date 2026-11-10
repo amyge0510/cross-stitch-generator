@@ -10,7 +10,7 @@ Most people want something simple, so the flow is template-first:
 
 1. **Pick a template**: Initials (photo in the middle, initials in opposite corners, little embellishments in the others), Words, Initials & date, Rose, Framed, Photo strip, Collage, or Blank.
 2. **Add your photo**: uploads fill the template's photo spots in order. One tap sets the photo style for all of them (Classic B&W, Soft B&W, Noir, Cool B&W, Sepia, Faded film, Rose mono, Cyanotype). Tap a photo on the card to crop, zoom or add a border.
-3. **Your words**: type your initials, names or date into labeled fields; words shrink to fit their spot. Pick one of 5 lettering styles.
+3. **Your words**: type your initials, names or date into labeled fields; words shrink to fit their spot. Pick a lettering style: **Viceroy** and **Antique** are real hand-charted cross-stitch alphabets, stitched exactly as charted; **Handwritten** is a casual script for phrases. Numbers and symbols the charts don't include (&, +, dates) come from Handwritten.
 4. **Colors**: preset looks or any hex color for paper and thread.
 5. **Size & stitch**: card size, and hole spacing from 16 down to 8 holes per inch (default 14/in, 1.8 mm). Changing spacing keeps everything the same size on paper.
 6. **Print & punch**: page 1 is the actual-size template with a dot at every hole to pierce; page 2 is a stitch chart with counts and a thread estimate. **Save image** exports a 300 dpi PNG.
@@ -41,9 +41,15 @@ On Vercel, import the repo with the **Other** preset and no build command; every
 | --- | --- |
 | `index.html`, `styles.css` | Layout: canvas on the left, numbered steps on the right |
 | `js/app.js` | State, undo/redo, autosave, canvas interaction (select, drag, resize, crop), panel controls |
-| `js/stitch.js` | Fonts, text → stitch rasterizing (with thinning for single-line), motif and frame bitmaps |
+| `js/stitch.js` | Lettering: charted alphabets set by letter shape, web font → stitches (with single-line thinning), motif and frame bitmaps |
+| `js/chartfonts.js` | The Viceroy and Antique alphabets, digitized square by square from their charts |
 | `js/templates.js` | The template layouts, built in inches so they work at any hole spacing |
 | `js/motifs.js` | The motif library as pixel art (`X` = stitch) |
 | `js/render.js` | Draws paper, photos, realistic thread stitches and hole dots onto any canvas |
 | `js/filters.js` | Photo filters, computed per pixel |
 | `js/print.js` | Punch template, stitch chart, print layout and PNG export |
+
+## Credits & licenses
+
+- **Antique** alphabet: charted by the [Antique Pattern Library](https://www.antiquepatternlibrary.org) (2023.11), licensed [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). The digitized letters in `js/chartfonts.js` are shared under the same license, so they can't be used commercially.
+- **Viceroy** alphabet: digitized from the “Monograma Viceroy” chart. The original designer and license are unknown, so confirm permission before any commercial use.

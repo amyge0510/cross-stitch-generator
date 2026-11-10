@@ -192,7 +192,8 @@ textarea {
   width: 100%; resize: vertical; min-height: 54px; padding: 10px 12px; border: 1px solid var(--card-line);
   border-radius: 12px; background: #fff; font-size: 16px;
 }
-.fonts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
+.fonts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.font-chip canvas { display: block; }
 .font-chip {
   border: 1px solid var(--card-line); background: var(--chip); border-radius: 12px; padding: 8px 4px 6px;
   display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -350,3 +351,5 @@ details.more > :last-child { padding-bottom: 16px; }
 @media (max-width: 520px) {
   .template-grid { grid-template-columns: repeat(2, 1fr); }
 }
+.credits { margin: 0; text-align: center; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.credits a { color: inherit; }

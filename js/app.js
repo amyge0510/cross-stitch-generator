@@ -1,5 +1,5 @@
 import { MOTIFS, FRAMES } from './motifs.js';
-import { FONTS, WEIGHTS, fontCss, fontsChanged, motifPreviewBitmap, framePreviewBitmap } from './stitch.js';
+import { FONTS, WEIGHTS, fontCss, fontsChanged, motifPreviewBitmap, framePreviewBitmap, bitmapFor, nativeSize } from './stitch.js';
 import { FILTERS, applyFilter } from './filters.js';
 import {
   drawScene, gridOf, boundsOf, snapStitch, photoGeometry, isStitch, paintStitches, stats, EDGES, filteredImage,
@@ -52,7 +52,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v2';
+const STORE = 'stitched:v3';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -60,7 +60,7 @@ let selectedId = null;
 let cropId = null;
 let hoverId = null;
 const view = { zoom: 1, mode: 'real', grid: false };
-const prefs = { thread: '#C1121F', font: 'vibes', size: 18, weight: 0, align: 'center', draft: '', letter: null };
+const prefs = { thread: '#C1121F', font: 'viceroy', size: 24, weight: 0, align: 'center', draft: '', letter: null };
 const printOpts = {
   paper: /^en-(US|CA)|^es-(MX|US)/.test(navigator.language || '') ? 'letter' : 'a4',
   holes: true, photos: true, guide: false, paperFill: false, trim: true, chart: true,
@@ -965,11 +965,7 @@ function buildPanel() {
     b.type = 'button';
     b.className = 'font-chip';
     b.dataset.id = f.id;
-    const sample = document.createElement('span');
-    sample.className = 'sample';
-    sample.textContent = 'love';
-    sample.style.font = fontCss(f, 22);
-    b.append(sample, Object.assign(document.createElement('small'), { textContent: f.name }));
+    b.append(fontPreview(f, 'love'), Object.assign(document.createElement('small'), { textContent: f.name }));
     b.addEventListener('click', () => {
       prefs.font = f.id;
       if (!updateSelected((el) => { if (el.type === 'text') el.font = f.id; }, { anchor: true })) sync();
@@ -1187,11 +1183,7 @@ function buildSimpleControls() {
     b.type = 'button';
     b.className = 'font-chip';
     b.dataset.id = f.id;
-    const sample = document.createElement('span');
-    sample.className = 'sample';
-    sample.textContent = 'A J';
-    sample.style.font = fontCss(f, 22);
-    b.append(sample, Object.assign(document.createElement('small'), { textContent: f.name }));
+    b.append(fontPreview(f, f.id === 'hand' ? 'Amy' : 'AJ'), Object.assign(document.createElement('small'), { textContent: f.name }));
     b.addEventListener('click', () => {
       prefs.letter = f.id;
       prefs.font = f.id;
@@ -1204,6 +1196,28 @@ function buildSimpleControls() {
     });
     box.appendChild(b);
   }
+}
+
+/** A stitched sample of a lettering style, for the style buttons. */
+function fontPreview(f, text) {
+  const cv = document.createElement('canvas');
+  cv.className = 'font-preview';
+  cv.dataset.font = f.id;
+  cv.dataset.text = text;
+  drawFontPreview(cv);
+  return cv;
+}
+function drawFontPreview(cv) {
+  const f = FONTS.find((x) => x.id === cv.dataset.font);
+  const dpr = window.devicePixelRatio || 1;
+  const W = 78, H = 34;
+  cv.width = W * dpr; cv.height = H * dpr;
+  cv.style.width = `${W}px`; cv.style.height = `${H}px`;
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const bm = bitmapFor({ type: 'text', text: cv.dataset.text, font: f.id, size: nativeSize(f), weight: f.kind === 'chart' ? 0 : 1, align: 'left' });
+  const s = Math.min((W - 4) / bm.w, (H - 4) / bm.h, 3);
+  paintStitches(c, bm, (W - bm.w * s) / 2, (H - bm.h * s) / 2, s, '#a8322e', 'real');
 }
 
 let wordKey = '';
@@ -1521,7 +1535,7 @@ function boot() {
   render();
 
   // Once the cursive fonts arrive, re-rasterize text in place.
-  const loads = FONTS.map((f) => document.fonts.load(fontCss(f, 40), 'love'));
+  const loads = FONTS.filter((f) => f.kind === 'type').map((f) => document.fonts.load(fontCss(f, 40), 'love 0123456789&+'));
   Promise.allSettled(loads).then(() => {
     const before = new Map(doc.elements.filter((e) => e.type === 'text').map((e) => [e.id, boundsOf(doc, e)]));
     fontsChanged();
@@ -1537,6 +1551,7 @@ function boot() {
     }
     history.stack[history.index] = snapshot();
     renderTemplateThumbs();
+    document.querySelectorAll('canvas.font-preview').forEach(drawFontPreview);
     sync();
     render();
   });
