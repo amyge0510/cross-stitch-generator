@@ -9,6 +9,7 @@ import { CHART_FONTS } from './chartfonts.js';
 export const FONTS = [
   { id: 'viceroy', name: 'Viceroy', kind: 'chart' },
   { id: 'simple', name: 'Simple', kind: 'chart' },
+  { id: 'gothic', name: 'Gothic', kind: 'chart' },
 ];
 // Designs saved with earlier styles map onto the closest current one.
 const ALIASES = { antique: 'viceroy', hand: 'simple', dancing: 'simple', pacifico: 'simple', yellowtail: 'simple', playfair: 'simple', vibes: 'viceroy' };

@@ -40,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v22';
+const STORE = 'stitched:v23';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -860,7 +860,7 @@ function select(id, { scroll = true } = {}) {
   const el = selected();
   if (!el || !scroll || !window.matchMedia('(min-width: 961px)').matches) return;
   const opts = { behavior: 'smooth', block: 'nearest' };
-  if (el.type === 'photo') $('#photoEdit').scrollIntoView(opts);
+  if (el.type === 'photo') $('#sec-photos').scrollIntoView({ behavior: 'smooth', block: 'start' });
   else if (el.type === 'text') $(`#wordFields [data-id="${el.id}"]`)?.scrollIntoView(opts);
 }
 
