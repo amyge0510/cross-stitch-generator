@@ -8,7 +8,7 @@ Design it here, print the template at actual size, pierce the dots, stitch.
 
 Most people want something simple, so the steps are short and template-first:
 
-1. **Pick a template**: recreations of real stitched cards: **Love note** (“where love grows” around a black & white photo, plus a heart), **Monogram** (cream initials on a maroon mat), **You + me** (words over the photo with sparkles), or **Blank**.
+1. **Pick a template**: recreations of real stitched cards: **How lucky** (“how lucky are we” around a black & white photo set off-center), **Monogram** (cream initials on a maroon mat), **You + me** (words over the photo with sparkles), or **Blank**.
 2. **Size**: common card and frame sizes, or any custom size. Each template has its own layout for every card shape (wide strip, landscape, square, portrait, tall strip), and lettering is sized to fill its spot for the chosen font, so every size × font combination gets its own default. Rotating to portrait turns the photo frame too; the photo inside stays upright.
 3. **Colors**: four preset looks: Classic, Maroon, Noir, Navy & gold.
 4. **Paper** and **Thread**: pick from the swatches. Thread color applies to every stitch.
@@ -46,7 +46,7 @@ On Vercel, import the repo with the **Other** preset and no build command; every
 | `js/stitch.js` | Lettering: charted alphabets set by letter shape, web font → stitches (with single-line thinning), motif and frame bitmaps |
 | `js/chartfonts.js` | The Viceroy, Antique and Simple alphabets, digitized square by square from their charts |
 | `js/templates.js` | The template layout matrix (one layout per card shape) and text sizing |
-| `js/motifs.js` | Motifs as pixel art (`X` = stitch): tiny hearts, sparkles, moon, plus the heart Love note uses |
+| `js/motifs.js` | Motifs as pixel art (`X` = stitch): tiny hearts, sparkles, moon, plus a heart |
 | `js/render.js` | Draws paper, photos, realistic thread stitches and hole dots onto any canvas |
 | `js/filters.js` | Photo filters, computed per pixel |
 | `js/print.js` | Punch template, stitch chart, print layout and PNG export |

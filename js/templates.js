@@ -22,17 +22,18 @@ export function shapeOf(w, h) {
 // Recreations of real cards people have stitched (measured from reference photos), extended to every shape.
 export const TEMPLATES = [
   {
-    // "where love grows": words around a black & white photo, and a little heart.
-    id: 'words', name: 'Love note', w: 10, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'simple', filter: 'classic',
-    text: { w1: 'where', w2: 'love', w3: 'grows' },
+    // "how lucky are we": a black & white photo set low and off-center, "how lucky" stacked above it
+    // (lucky overlapping the photo's top edge) and "are … we" along its bottom edge. Measured from a
+    // framed card; the photo is deliberately NOT centered.
+    id: 'words', name: 'How lucky', w: 10, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'simple', filter: 'classic',
+    text: { w1: 'how', w2: 'lucky', w3: 'are', w4: 'we' },
     layouts: {
-      land: { p1: [0.27, 0.28, 0.73, 0.72], w1: [0.05, 0.12, 0.60, 0.38], w2: [0.67, 0.17, 0.98, 0.44], w3: [0.37, 0.60, 0.90, 0.86], heart: [0.245, 0.594, 0.07] },
-      wide: { p1: [0.36, 0.15, 0.64, 0.85], w1: [0.03, 0.08, 0.35, 0.50], w2: [0.65, 0.08, 0.97, 0.50], w3: [0.65, 0.50, 0.97, 0.92], heart: [0.19, 0.72, 0.13] },
-      square: { p1: [0.25, 0.29, 0.75, 0.71], w1: [0.04, 0.04, 0.52, 0.22], w2: [0.52, 0.12, 0.97, 0.30], w3: [0.36, 0.73, 0.94, 0.95], heart: [0.14, 0.58, 0.08] },
-      port: { p1: [0.2, 0.31, 0.8, 0.69], w1: [0.04, 0.04, 0.60, 0.17], w2: [0.42, 0.17, 0.96, 0.30], w3: [0.30, 0.72, 0.94, 0.90], heart: [0.12, 0.62, 0.08] },
-      tall: { p1: [0.14, 0.32, 0.86, 0.68], w1: [0.06, 0.05, 0.94, 0.16], w2: [0.06, 0.16, 0.94, 0.28], w3: [0.06, 0.69, 0.94, 0.82], heart: [0.5, 0.88, 0.14] },
+      land: { p1: [0.26, 0.32, 0.73, 0.79], w1: [0.10, 0.08, 0.46, 0.31], w2: [0.17, 0.26, 0.75, 0.57], w3: [0.08, 0.69, 0.44, 0.90], w4: [0.55, 0.67, 0.84, 0.88] },
+      wide: { p1: [0.36, 0.18, 0.62, 0.94], w1: [0.03, 0.06, 0.22, 0.46], w2: [0.10, 0.36, 0.44, 0.97], w3: [0.63, 0.08, 0.82, 0.48], w4: [0.74, 0.50, 0.96, 0.90] },
+      square: { p1: [0.24, 0.36, 0.74, 0.82], w1: [0.08, 0.06, 0.45, 0.25], w2: [0.15, 0.21, 0.73, 0.48], w3: [0.05, 0.78, 0.40, 0.96], w4: [0.54, 0.76, 0.84, 0.94] },
+      port: { p1: [0.18, 0.37, 0.80, 0.77], w1: [0.06, 0.06, 0.48, 0.19], w2: [0.13, 0.17, 0.81, 0.40], w3: [0.04, 0.77, 0.44, 0.93], w4: [0.56, 0.76, 0.88, 0.92] },
+      tall: { p1: [0.10, 0.34, 0.84, 0.66], w1: [0.06, 0.05, 0.70, 0.16], w2: [0.08, 0.15, 0.96, 0.34], w3: [0.06, 0.69, 0.60, 0.82], w4: [0.40, 0.82, 0.94, 0.95] },
     },
-    motifs: { heart: 'heart' },
   },
   {
     // Cream monogram initials on a maroon mat, overlapping two corners of a black & white photo.
