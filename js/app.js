@@ -40,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v18';
+const STORE = 'stitched:v19';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -802,6 +802,44 @@ function openElement(hit) {
   }
 }
 
+// Pinch to zoom the canvas. Damped (DAMP < 1) so it follows the fingers without being jumpy.
+const DAMP = 0.6;
+scroller.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey || cropId) return; // trackpad pinch arrives as ctrl+wheel
+  e.preventDefault();
+  zoomTo(view.zoom * Math.exp(-clamp(e.deltaY, -25, 25) * 0.008 * DAMP));
+}, { passive: false });
+let gesture = null; // Safari trackpad pinch
+scroller.addEventListener('gesturestart', (e) => { e.preventDefault(); gesture = view.zoom; });
+scroller.addEventListener('gesturechange', (e) => { e.preventDefault(); if (gesture) zoomTo(gesture * e.scale ** DAMP); });
+scroller.addEventListener('gestureend', (e) => { e.preventDefault(); gesture = null; });
+const touches = new Map(); // two-finger pinch on touch screens
+let pinch = null;
+const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'touch') return;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touches.size === 2) {
+    pinch = { d: spread(), z: view.zoom };
+    if (drag) { // the first finger started a drag: undo it, this is a pinch
+      for (const [id, o] of drag.origs || []) { const x = byId(id); if (x) Object.assign(x, o); }
+      drag = null;
+    }
+  }
+}, true);
+canvas.addEventListener('pointermove', (e) => {
+  if (!touches.has(e.pointerId)) return;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && touches.size === 2) {
+    const d = spread();
+    if (Math.abs(d - pinch.d) > 12) zoomTo(pinch.z * (d / pinch.d) ** DAMP); // ignore small finger wobble
+    e.stopImmediatePropagation();
+  }
+}, true);
+const lift = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; };
+canvas.addEventListener('pointerup', lift, true);
+canvas.addEventListener('pointercancel', lift, true);
+
 canvas.addEventListener('wheel', (e) => {
   if (!cropId) return;
   const el = byId(cropId);
@@ -1195,6 +1233,13 @@ function setCanvasSize(w, h) {
   render();
 }
 
+/** Canvas zoom (1 = fit to the screen). */
+function zoomTo(z) {
+  view.zoom = clamp(z, 0.5, 4);
+  sync();
+  render();
+}
+
 function updateSelected(fn, { anchor = false, live = false } = {}) {
   const el = selected();
   if (!el) return false;
@@ -1290,8 +1335,6 @@ function buildPanel() {
     prefs.letter = null;
     applyTemplate(doc.template || TEMPLATES[0].id, { fresh: true });
   });
-  $('#gridToggle').addEventListener('change', (e) => { view.grid = e.target.checked; render(); });
-  const zoomTo = (z) => { view.zoom = clamp(z, 0.5, 4); sync(); render(); };
   $('#zoomIn').addEventListener('click', () => zoomTo(view.zoom * 1.25));
   $('#zoomOut').addEventListener('click', () => zoomTo(view.zoom / 1.25));
   $('#zoomFit').addEventListener('click', () => zoomTo(1));
@@ -1580,7 +1623,7 @@ function sync() {
 const dialog = $('#printDialog');
 function readPrintForm() {
   const f = dialog.querySelector('form');
-  for (const k of ['holes', 'photos', 'guide', 'paperFill', 'trim', 'chart']) printOpts[k] = f.elements[k].checked;
+  for (const k of ['photos', 'paperFill', 'trim']) printOpts[k] = f.elements[k].checked;
 }
 function updatePrintPreview() {
   const { fit } = printPreview(doc, images, printOpts, $('#printPreview'));
@@ -1596,7 +1639,7 @@ function openPrint() {
   });
   setOn($('#paperSizeChips'), printOpts.paper);
   const f = dialog.querySelector('form');
-  for (const k of ['holes', 'photos', 'guide', 'paperFill', 'trim', 'chart']) f.elements[k].checked = printOpts[k];
+  for (const k of ['photos', 'paperFill', 'trim']) f.elements[k].checked = printOpts[k];
   dialog.showModal();
   requestAnimationFrame(updatePrintPreview);
 }

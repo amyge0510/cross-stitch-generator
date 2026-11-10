@@ -15,7 +15,7 @@ Most people want something simple, so the steps are short and template-first:
 5. **Photo**: uploads fill the template's photo spots in order. Photo style (Original, Classic B&W, Soft B&W, Noir) applies to all photos, or to the one you tap on the card; a tapped photo can also change shape.
 6. **Text**: one box per piece of text, plus **Add text**. Three lettering styles, all real hand-charted cross-stitch alphabets stitched exactly as charted: **Viceroy** (elegant script), **Antique** (a flourished script, upper and lower case) and **Simple** (DMC's classic script with numbers). Numbers and symbols Viceroy and Antique don't include come from Simple. Letters are always stitched exactly as charted; only the stitch size changes (1–2.8 mm). Past the largest stitch, each charted stitch becomes 2×2 (then 3×3) smaller stitches, so big letters are the same picture stitched finer.
 
-**Print punch template** (top right) prints page 1, an actual-size template with a dot at every hole to pierce, and page 2, a stitch chart. You can also save a 300 dpi image from the print window. Holes are spaced 14 per inch (1.8 mm).
+**Print punch template** (top right) prints an actual-size template with a dot at every hole to pierce and a faint X for each stitch. Options: photos, paper color and trim marks. You can also save a 300 dpi image from the print window.
 
 Switching templates keeps your photos and text. Everything on the card can still be dragged, resized and rotated:
 
