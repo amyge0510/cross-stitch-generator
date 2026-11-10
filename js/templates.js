@@ -1,64 +1,81 @@
-// Ready-made layouts. Most people pick one, add a photo, type their words and print.
-// Everything is in inches on the template's own card, so templates work at any hole spacing.
-//   photo: x, y, w, h
-//   text:  slot (kept when switching templates), text, cx, cy (center), h (letter size), weight,
-//          maxW / maxH: the box it must fit in; longer words shrink to fit
-//   motif: motif id, cx, cy, h (target height; picks the nearest whole-stitch scale), rot, flip
-//   frame: style, inset (supported, though no current template uses one)
+// Ready-made layouts, as a matrix: every template has a layout for each card shape (wide strip,
+// landscape, square, portrait, tall strip). Positions are fractions of the card, so a layout fits any size
+// of that shape; lettering is then sized to fill its box for whichever font is picked. The result: every
+// paper size × font has its own default letter size and placement.
+//   photo: box [x0, y0, x1, y1]
+//   text:  box [x0, y0, x1, y1] the words are centered in and sized to fill; text (default words)
+//   motif: at [cx, cy], h (height as a fraction of the card's shorter side)
 import { MOTIFS } from './motifs.js';
-import { boundsOf, snapStitch, gridOf } from './render.js';
+import { boundsOf, snapStitch } from './render.js';
 import { fontById } from './stitch.js';
 
-const PHOTO = (x, y, w, h, extra = {}) => ({ type: 'photo', x, y, w, h, ...extra });
+/** Which layout a card uses, from its proportions. */
+export function shapeOf(w, h) {
+  const r = w / h;
+  if (r >= 2) return 'wide';
+  if (r > 1.12) return 'land';
+  if (r >= 0.89) return 'square';
+  if (r > 0.5) return 'port';
+  return 'tall';
+}
 
-// Recreations of real cards people have stitched. Positions were measured from reference photos.
+// Recreations of real cards people have stitched (measured from reference photos), extended to every shape.
 export const TEMPLATES = [
   {
-    // "where love grows": chunky words around a black & white photo, and a little heart.
-    // Simple lettering at its charted size, tucked against the photo's edges.
-    id: 'words', name: 'Love note',
-    w: 10, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
-    elements: [
-      PHOTO(3.0, 2.1, 4.6, 3.5, { filter: 'classic' }),
-      { type: 'text', slot: 'w1', text: 'where', cx: 3.25, cy: 2.0, h: 2.5, maxW: 5.0, maxH: 2.0 },
-      { type: 'text', slot: 'w2', text: 'love', cx: 8.35, cy: 2.45, h: 2.5, maxW: 3.6, maxH: 2.0 },
-      { type: 'text', slot: 'w3', text: 'grows', cx: 6.35, cy: 5.75, h: 2.5, maxW: 4.8, maxH: 2.0 },
-      { type: 'motif', motif: 'heart', cx: 2.45, cy: 4.75, h: 0.55 },
-    ],
+    // "where love grows": words around a black & white photo, and a little heart.
+    id: 'words', name: 'Love note', w: 10, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'simple', filter: 'classic',
+    text: { w1: 'where', w2: 'love', w3: 'grows' },
+    layouts: {
+      land: { p1: [0.30, 0.26, 0.76, 0.70], w1: [0.05, 0.12, 0.60, 0.38], w2: [0.67, 0.17, 0.98, 0.44], w3: [0.37, 0.60, 0.90, 0.86], heart: [0.245, 0.594, 0.07] },
+      wide: { p1: [0.36, 0.15, 0.64, 0.85], w1: [0.03, 0.08, 0.35, 0.50], w2: [0.65, 0.08, 0.97, 0.50], w3: [0.65, 0.50, 0.97, 0.92], heart: [0.19, 0.72, 0.13] },
+      square: { p1: [0.25, 0.30, 0.75, 0.72], w1: [0.04, 0.04, 0.52, 0.22], w2: [0.52, 0.12, 0.97, 0.30], w3: [0.36, 0.73, 0.94, 0.95], heart: [0.14, 0.58, 0.08] },
+      port: { p1: [0.20, 0.32, 0.80, 0.70], w1: [0.04, 0.04, 0.60, 0.17], w2: [0.42, 0.17, 0.96, 0.30], w3: [0.30, 0.72, 0.94, 0.90], heart: [0.12, 0.62, 0.08] },
+      tall: { p1: [0.14, 0.30, 0.86, 0.66], w1: [0.06, 0.05, 0.94, 0.16], w2: [0.06, 0.16, 0.94, 0.28], w3: [0.06, 0.69, 0.94, 0.82], heart: [0.5, 0.88, 0.14] },
+    },
+    motifs: { heart: 'heart' },
   },
   {
-    // Cream monogram initials on a maroon mat around a black & white wedding photo.
-    id: 'monogram', name: 'Monogram',
-    w: 7, h: 5, paper: '#5A1A20', thread: '#F1E6CF', font: 'viceroy',
-    elements: [
-      PHOTO(1.32, 0.93, 4.34, 2.87, { filter: 'classic' }),
-      { type: 'text', slot: 'i1', text: 'A', cx: 1.4, cy: 1.09, h: 2.5, maxW: 2.8, maxH: 1.9 },
-      { type: 'text', slot: 'i2', text: 'J', cx: 5.6, cy: 3.85, h: 2.5, maxW: 2.8, maxH: 1.9 },
-    ],
+    // Cream monogram initials on a maroon mat, overlapping two corners of a black & white photo.
+    id: 'monogram', name: 'Monogram', w: 7, h: 5, paper: '#5A1A20', thread: '#F1E6CF', font: 'viceroy', filter: 'classic',
+    text: { i1: 'A', i2: 'J' },
+    layouts: {
+      land: { p1: [0.19, 0.19, 0.81, 0.76], i1: [0.03, 0.03, 0.37, 0.41], i2: [0.63, 0.58, 0.97, 0.97] },
+      wide: { p1: [0.34, 0.19, 0.66, 0.76], i1: [0.06, 0.05, 0.34, 0.62], i2: [0.66, 0.40, 0.94, 0.96] },
+      square: { p1: [0.20, 0.22, 0.80, 0.78], i1: [0.03, 0.03, 0.40, 0.38], i2: [0.60, 0.62, 0.97, 0.97] },
+      port: { p1: [0.21, 0.19, 0.79, 0.81], i1: [0.03, 0.03, 0.47, 0.30], i2: [0.53, 0.70, 0.97, 0.97] },
+      tall: { p1: [0.14, 0.30, 0.86, 0.70], i1: [0.06, 0.04, 0.94, 0.28], i2: [0.06, 0.72, 0.94, 0.96] },
+    },
   },
   {
     // A big color photo, "you + me" stitched over its corner, sparkles around.
-    id: 'youme', name: 'You + me',
-    w: 7, h: 5, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
-    elements: [
-      PHOTO(0.83, 0.87, 5.0, 3.3, { filter: 'original' }),
-      { type: 'text', slot: 'phrase', text: 'you\n+ me', cx: 4.7, cy: 3.0, h: 2.5, maxW: 3.4, maxH: 3.6 },
-      { type: 'motif', motif: 'sparkle', cx: 5.33, cy: 0.87, h: 0.5 },
-      { type: 'motif', motif: 'sparkle-small', cx: 3.89, cy: 1.0, h: 0.36 },
-      { type: 'motif', motif: 'sparkle-small', cx: 5.8, cy: 1.68, h: 0.36 },
-      { type: 'motif', motif: 'sparkle-small', cx: 3.09, cy: 3.4, h: 0.36 },
-      { type: 'motif', motif: 'sparkle', cx: 1.44, cy: 4.18, h: 0.5 },
-      { type: 'motif', motif: 'sparkle-small', cx: 3.91, cy: 3.85, h: 0.36 },
-    ],
+    id: 'youme', name: 'You + me', w: 7, h: 5, paper: '#FFFFFF', thread: '#C1121F', font: 'simple', filter: 'original',
+    text: { phrase: 'you\n+ me' },
+    layouts: {
+      land: { p1: [0.12, 0.17, 0.83, 0.83], phrase: [0.50, 0.38, 0.95, 0.92],
+        s1: [0.76, 0.17, 0.1], s2: [0.56, 0.20, 0.072], s3: [0.83, 0.34, 0.072], s4: [0.44, 0.68, 0.072], s5: [0.21, 0.84, 0.1], s6: [0.30, 0.30, 0.072] },
+      wide: { p1: [0.20, 0.12, 0.62, 0.88], phrase: [0.58, 0.20, 0.95, 0.92],
+        s1: [0.65, 0.12, 0.1], s2: [0.46, 0.15, 0.072], s3: [0.94, 0.20, 0.072], s4: [0.40, 0.70, 0.072], s5: [0.18, 0.88, 0.1], s6: [0.28, 0.30, 0.072] },
+      square: { p1: [0.12, 0.14, 0.86, 0.80], phrase: [0.48, 0.52, 0.95, 0.94],
+        s1: [0.80, 0.14, 0.1], s2: [0.55, 0.16, 0.072], s3: [0.88, 0.32, 0.072], s4: [0.40, 0.72, 0.072], s5: [0.14, 0.82, 0.1], s6: [0.28, 0.32, 0.072] },
+      port: { p1: [0.10, 0.12, 0.90, 0.68], phrase: [0.40, 0.52, 0.95, 0.94],
+        s1: [0.82, 0.11, 0.1], s2: [0.52, 0.13, 0.072], s3: [0.91, 0.28, 0.072], s4: [0.30, 0.64, 0.072], s5: [0.12, 0.72, 0.1], s6: [0.24, 0.86, 0.072] },
+      tall: { p1: [0.10, 0.08, 0.90, 0.55], phrase: [0.10, 0.58, 0.90, 0.90],
+        s1: [0.82, 0.08, 0.1], s2: [0.20, 0.06, 0.072], s3: [0.92, 0.25, 0.072], s4: [0.15, 0.60, 0.072], s5: [0.15, 0.93, 0.1], s6: [0.85, 0.94, 0.072] },
+    },
+    motifs: { s1: 'sparkle', s2: 'sparkle-small', s3: 'sparkle-small', s4: 'sparkle-small', s5: 'sparkle', s6: 'sparkle-small' },
   },
   {
-    id: 'blank', name: 'Blank',
-    w: 7, h: 5, paper: '#FBF8F2', thread: '#C1121F', font: 'viceroy',
-    elements: [],
+    id: 'blank', name: 'Blank', w: 7, h: 5, paper: '#FBF8F2', thread: '#C1121F', font: 'viceroy',
+    text: {}, layouts: { land: {}, wide: {}, square: {}, port: {}, tall: {} },
   },
 ];
 
 export const templateById = (id) => TEMPLATES.find((t) => t.id === id);
+
+/** The layout spec for one template item at the doc's current shape. */
+function specFor(t, doc, key) {
+  return t.layouts[shapeOf(doc.w, doc.h)][key];
+}
 
 /*
  * Text layout is computed fresh from three things, never from the previous layout:
@@ -102,28 +119,82 @@ function fitScale(doc, el, f, S, maxW, maxH) {
   return el.size / Math.max(1, S);
 }
 
+/**
+ * Lays out text from scratch.
+ *  - Template words (not hand-edited) are sized as large as fits their box on this card, for their font,
+ *    and centered in it; words in the same template share the smallest of those sizes so they match.
+ *  - Other text (added or hand-edited) keeps its home: center and size relative to the card.
+ */
 export function layoutTexts(doc, only = null) {
   const m = Math.min(doc.w, doc.h), p = doc.pitch;
-  const texts = doc.elements.filter((e) => e.type === 'text' && e.home && (!only || only.includes(e) || (e.group && only.some((o) => o.group === e.group))));
-  const scales = new Map();
-  for (const el of texts) {
-    const H = el.home, f = fontById(el.font);
-    const S = (H.k * m) / p;
-    el.baseSize = S;
-    // the box it fits in never extends past the card's margins
-    const maxW = Math.min(H.mw ? H.mw * m : Infinity, doc.w - 2 * EDGE_MARGIN);
-    const maxH = Math.min(H.mh ? H.mh * m : Infinity, doc.h - 2 * EDGE_MARGIN);
-    const sc = fitScale(doc, el, f, S, maxW, maxH);
-    if (el.group) scales.set(el.group, Math.min(scales.get(el.group) ?? Infinity, sc));
+  const t = templateById(doc.template);
+  const all = doc.elements.filter((e) => e.type === 'text');
+  const want = (e) => !only || only.includes(e) || (e.group && only.some((o) => o.group === e.group));
+  const boxed = all.filter((e) => want(e) && t && e.tpl && !e.custom && specFor(t, doc, e.tpl));
+  const sizes = new Map();
+  for (const el of boxed) {
+    const [x0, y0, x1, y1] = specFor(t, doc, el.tpl);
+    const maxW = Math.min((x1 - x0) * doc.w, doc.w - 2 * EDGE_MARGIN), maxH = Math.min((y1 - y0) * doc.h, doc.h - 2 * EDGE_MARGIN);
+    fitScale(doc, el, fontById(el.font), (maxH / p) * 1.6, maxW, maxH); // start big, shrink until it fits
+    if (el.group) sizes.set(el.group, Math.min(sizes.get(el.group) ?? Infinity, el.size));
   }
-  for (const el of texts) {
-    if (el.group) el.size = Math.max(6, Math.round(el.baseSize * scales.get(el.group)));
+  for (const el of boxed) {
+    if (el.group) el.size = sizes.get(el.group);
+    el.baseSize = el.size;
+    const [x0, y0, x1, y1] = specFor(t, doc, el.tpl);
     const b = boundsOf(doc, el);
-    el.x = el.home.cx * doc.w - b.w / 2;
-    el.y = el.home.cy * doc.h - b.h / 2;
+    el.x = ((x0 + x1) / 2) * doc.w - b.w / 2;
+    el.y = ((y0 + y1) / 2) * doc.h - b.h / 2;
     snapStitch(doc, el);
     keepInside(doc, el);
   }
+  for (const el of all) {
+    if (!want(el) || boxed.includes(el) || !el.home) continue;
+    const H = el.home;
+    const S = (H.k * m) / p;
+    el.baseSize = S;
+    const maxW = Math.min(H.mw ? H.mw * m : Infinity, doc.w - 2 * EDGE_MARGIN);
+    const maxH = Math.min(H.mh ? H.mh * m : Infinity, doc.h - 2 * EDGE_MARGIN);
+    fitScale(doc, el, fontById(el.font), S, maxW, maxH);
+    const b = boundsOf(doc, el);
+    el.x = H.cx * doc.w - b.w / 2;
+    el.y = H.cy * doc.h - b.h / 2;
+    snapStitch(doc, el);
+    keepInside(doc, el);
+  }
+}
+
+/**
+ * Puts every template-owned piece back at this card's default layout (photo frames, motifs, words).
+ * Hand edits are cleared: each card size starts from its own defaults. Photos keep their picture,
+ * filter, crop and rotation; the frame is re-shaped for the card (a portrait card gets a portrait frame).
+ */
+export function applyLayout(doc) {
+  const t = templateById(doc.template);
+  if (!t) return;
+  const m = Math.min(doc.w, doc.h);
+  for (const el of doc.elements) {
+    if (!el.tpl) continue;
+    const spec = specFor(t, doc, el.tpl);
+    if (!spec) continue;
+    delete el.custom;
+    delete el.home;
+    if (el.type === 'photo') {
+      const [x0, y0, x1, y1] = spec;
+      Object.assign(el, { x: x0 * doc.w, y: y0 * doc.h, w: (x1 - x0) * doc.w, h: (y1 - y0) * doc.h });
+    } else if (el.type === 'motif') {
+      const [cx, cy, hf] = spec;
+      const target = hf * m;
+      const mo = MOTIFS.find((x) => x.id === el.motif);
+      el.scale = Math.max(0.5, target / (mo.rows.length * doc.pitch));
+      const b = boundsOf(doc, el);
+      el.x = cx * doc.w - b.w / 2;
+      el.y = cy * doc.h - b.h / 2;
+      snapStitch(doc, el);
+      keepInside(doc, el);
+    }
+  }
+  layoutTexts(doc);
 }
 
 function place(doc, el, cx, cy) {
@@ -136,40 +207,27 @@ function place(doc, el, cx, cy) {
 }
 
 /**
- * Builds a design from a template.
+ * Builds a design from a template at its default card size.
  * texts: { slot: text } to carry over what the person already typed.
  */
 export function buildTemplate(t, { pitch, texts = {}, uid }) {
   const doc = { w: t.w, h: t.h, pitch, paper: t.paper, grain: true, template: t.id, elements: [] };
-  for (const s of t.elements) {
-    if (s.type === 'photo') {
-      doc.elements.push({
-        id: uid(), type: 'photo', imgId: null, x: s.x, y: s.y, w: s.w, h: s.h,
-        zoom: 1, panX: 0, panY: 0, filter: s.filter || 'classic', edge: s.edge || 'none', brightness: 0, contrast: 0,
-      });
-    } else if (s.type === 'text') {
-      const m = Math.min(t.w, t.h);
-      doc.elements.push({
-        id: uid(), type: 'text', slot: s.slot, group: 'template', text: texts[s.slot] ?? s.text,
-        font: s.font || t.font, size: 10, weight: s.weight ?? 0, align: s.align || 'center', color: t.thread, x: 0, y: 0,
-        home: { cx: s.cx / t.w, cy: s.cy / t.h, k: s.h / m, mw: s.maxW / m, mh: s.maxH / m },
-      });
-    } else if (s.type === 'motif') {
-      const m = MOTIFS.find((x) => x.id === s.motif);
-      const natural = (s.rot % 2 ? Math.max(...m.rows.map((r) => r.length)) : m.rows.length) * pitch;
-      place(doc, {
-        id: uid(), type: 'motif', motif: s.motif, scale: Math.max(1, Math.round(s.h / natural)),
-        rot: s.rot || 0, flip: !!s.flip, color: t.thread, x: 0, y: 0,
-      }, s.cx, s.cy);
-    } else if (s.type === 'frame') {
-      const g = gridOf(doc);
-      const ins = Math.round(s.inset / g.p);
-      doc.elements.push({
-        id: uid(), type: 'frame', style: s.style, cols: g.cols - ins * 2, rows: g.rows - ins * 2,
-        color: t.thread, x: g.gx + ins * g.p, y: g.gy + ins * g.p,
-      });
-    }
+  const keys = Object.keys(t.layouts.land);
+  for (const key of keys.filter((k) => /^p\d/.test(k))) {
+    doc.elements.push({
+      id: uid(), type: 'photo', tpl: key, imgId: null, x: 0, y: 0, w: 1, h: 1,
+      zoom: 1, panX: 0, panY: 0, filter: t.filter || 'classic', edge: 'none', brightness: 0, contrast: 0,
+    });
   }
-  layoutTexts(doc);
+  for (const key of keys.filter((k) => k in (t.motifs || {}))) {
+    doc.elements.push({ id: uid(), type: 'motif', tpl: key, motif: t.motifs[key], scale: 1, rot: 0, flip: false, color: t.thread, x: 0, y: 0 });
+  }
+  for (const [slot, text] of Object.entries(t.text)) {
+    doc.elements.push({
+      id: uid(), type: 'text', tpl: slot, slot, group: 'template', text: texts[slot] ?? text,
+      font: t.font, size: 10, weight: 0, align: 'center', color: t.thread, x: 0, y: 0,
+    });
+  }
+  applyLayout(doc);
   return doc;
 }

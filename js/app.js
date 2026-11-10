@@ -5,7 +5,7 @@ import {
   drawScene, gridOf, boundsOf, snapStitch, photoGeometry, isStitch, paintStitches, stats, EDGES, filteredImage, photoFrame,
 } from './render.js';
 import { printDesign, printPreview, exportPNG, PAPERS, formatLength, inchLabel } from './print.js';
-import { TEMPLATES, templateById, buildTemplate, layoutTexts, keepInside } from './templates.js';
+import { TEMPLATES, templateById, buildTemplate, layoutTexts, keepInside, applyLayout } from './templates.js';
 
 const $ = (s) => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -40,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v12';
+const STORE = 'stitched:v13';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -594,7 +594,10 @@ function endDrag() {
   if (drag.moved && el) {
     if (isStitch(el)) snapStitch(doc, el);
     if (el.angle === 0) delete el.angle;
-    if (drag.kind !== 'pan') setHome(el);
+    if (drag.kind !== 'pan') {
+      if (el.tpl) el.custom = true;
+      setHome(el);
+    }
     commit();
   }
   canvas.style.cursor = drag.kind === 'pan' || drag.kind === 'rotate' ? 'grab' : 'default';
@@ -644,8 +647,9 @@ function resize(el, d, p) {
   if (el.type === 'text') {
     el.size = clamp(Math.round(orig.size * f), 5, 160);
     el.baseSize = el.size;
-    // sized by hand: it now stands on its own, without a fit box or a shared group size
-    delete el.group;
+    // Sized by hand: keeps this size when the font changes. It still belongs to the template, so changing
+    // the card size puts it back at that size's default.
+    if (el.tpl) el.custom = true;
     if (el.home) { delete el.home.mw; delete el.home.mh; }
   }
   if (el.type === 'motif') el.scale = clamp(orig.scale * f, 0.25, 10);
@@ -786,6 +790,7 @@ function duplicateSelected() {
   const el = selected();
   if (!el) return;
   const copy = { ...JSON.parse(JSON.stringify(el)), id: uid() };
+  delete copy.tpl; delete copy.slot; delete copy.group; delete copy.custom;
   const g = gridOf(doc);
   copy.x += g.p * 3;
   copy.y += g.p * 3;
@@ -893,6 +898,7 @@ function setShape(el, shapeId) {
   const fit = Math.min(1, (doc.w * 0.95) / w, (doc.h * 0.95) / h);
   w *= fit; h *= fit;
   Object.assign(el, { w, h, x: cx - w / 2, y: cy - h / 2, panX: 0, panY: 0 });
+  if (el.tpl) el.custom = true;
   setHome(el);
 }
 
@@ -1028,6 +1034,9 @@ function setCanvasSize(w, h) {
   const m = Math.min(w, h);
   const p = doc.pitch;
   for (const el of doc.elements) {
+    // The template's own photo frames, words and motifs get this card size's default layout (below);
+    // anything the person added is scaled from where it sat on the old card.
+    if (el.tpl && templateById(doc.template)) continue;
     const H = el.home;
     if (el.type === 'photo') {
       el.w = H.k * m; el.h = el.w * H.ar;
@@ -1048,7 +1057,8 @@ function setCanvasSize(w, h) {
       if (b.h <= doc.h) el.y += Math.max(0, -b.y) - Math.max(0, b.y + b.h - doc.h);
     }
   }
-  layoutTexts(doc);
+  applyLayout(doc); // also lays out every piece of text
+  setHomes();
   commit();
   render();
 }
