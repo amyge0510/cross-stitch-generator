@@ -348,13 +348,11 @@ function motifBitmap(el) {
     for (let y = 0; y < bm.h; y++) for (let x = 0; x < bm.w; x++) out.data[x * out.w + (bm.h - 1 - y)] = bm.data[y * bm.w + x];
     bm = out;
   }
-  const s = Math.max(1, el.scale || 1);
-  if (s > 1) {
-    const out = makeBitmap(bm.w * s, bm.h * s);
-    for (let y = 0; y < out.h; y++) for (let x = 0; x < out.w; x++) out.data[y * out.w + x] = bm.data[Math.floor(y / s) * bm.w + Math.floor(x / s)];
-    bm = out;
-  }
-  return finalize(bm);
+  // Whole sizes stay exactly as drawn; in-between sizes (from resizing the card) are resampled.
+  const k = el.scale || 1;
+  const r = Math.round(k);
+  if (r >= 1 && k >= r * 0.92 && k <= r * 1.2) return r > 1 ? scaleUp(finalize(bm), r) : finalize(bm);
+  return resample(finalize(bm), k);
 }
 
 function frameBitmap(el) {

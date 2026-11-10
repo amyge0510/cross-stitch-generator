@@ -6,16 +6,18 @@ Design it here, print the template at actual size, pierce the dots, stitch.
 
 ## What it does
 
-Most people want something simple, so the flow is template-first:
+Most people want something simple, so the steps are short and template-first:
 
-1. **Pick a template**: Initials (photo in the middle, initials in opposite corners, little embellishments in the others), Words, Initials & date, Rose, Framed, Photo strip, Collage, or Blank.
-2. **Add your photo**: uploads fill the template's photo spots in order. One tap sets the photo style for all of them (Classic B&W, Soft B&W, Noir, Cool B&W, Sepia, Faded film, Rose mono, Cyanotype). Tap a photo on the card to crop, zoom or add a border.
-3. **Your words**: type your initials, names or date into labeled fields; words shrink to fit their spot. Pick a lettering style: **Viceroy** and **Antique** are real hand-charted cross-stitch alphabets, stitched exactly as charted; **Handwritten** is a casual script for phrases. Numbers and symbols the charts don't include (&, +, dates) come from Handwritten.
-4. **Colors**: preset looks or any hex color for paper and thread.
-5. **Size & stitch**: card size, and hole spacing from 16 down to 8 holes per inch (default 14/in, 1.8 mm). Changing spacing keeps everything the same size on paper.
-6. **Print & punch**: page 1 is the actual-size template with a dot at every hole to pierce; page 2 is a stitch chart with counts and a thread estimate. **Save image** exports a 300 dpi PNG.
+1. **Pick a template**: Initials (an 8×10 frame with a landscape photo and initials in opposite corners), Words, Initials & date, Rose, Framed, Photo strip, Collage, or Blank.
+2. **Size**: common card and frame sizes, or any custom size. Photos, text and motifs scale with the card.
+3. **Colors**: four preset looks: Classic, Maroon, Noir, Navy & gold.
+4. **Paper** and **Thread**: pick from the swatches. Thread color applies to every stitch.
+5. **Photo**: uploads fill the template's photo spots in order. One tap sets the photo style for all of them; tap a photo on the card to crop, zoom or add a border.
+6. **Text**: one box per piece of text, plus **Add text**. Pick a lettering style: **Viceroy** and **Antique** are real hand-charted cross-stitch alphabets, stitched exactly as charted; **Handwritten** is a casual script. Numbers and symbols the charts don't include come from Handwritten.
 
-Switching templates keeps your photos and words. For the few who want full control, **Make it your own** (collapsed at the bottom) adds free text, 20 stitched motifs and 4 frames, and everything on the card can be dragged, resized and layered.
+**Print punch template** (top right) prints page 1, an actual-size template with a dot at every hole to pierce, and page 2, a stitch chart. You can also save a 300 dpi image from the print window. Holes are spaced 14 per inch (1.8 mm).
+
+Switching templates keeps your photos and text. Everything on the card can still be dragged, resized and layered.
 
 Everything runs in the browser; photos never leave the device. The design is autosaved to local storage, with undo/redo (⌘Z / ⇧⌘Z).
 

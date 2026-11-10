@@ -1,5 +1,5 @@
 import { MOTIFS, FRAMES } from './motifs.js';
-import { FONTS, WEIGHTS, fontCss, fontsChanged, motifPreviewBitmap, framePreviewBitmap, bitmapFor, nativeSize } from './stitch.js';
+import { FONTS, fontCss, fontsChanged, bitmapFor, nativeSize } from './stitch.js';
 import { FILTERS, applyFilter } from './filters.js';
 import {
   drawScene, gridOf, boundsOf, snapStitch, photoGeometry, isStitch, paintStitches, stats, EDGES, filteredImage,
@@ -21,13 +21,6 @@ const SIZES = [
   { w: 8, h: 10, note: 'frame' },
   { w: 4, h: 11, note: 'long strip' },
 ];
-const PITCHES = [
-  { n: 16, name: 'Hairline' },
-  { n: 14, name: 'Fine' },
-  { n: 12, name: 'Classic' },
-  { n: 10, name: 'Medium' },
-  { n: 8, name: 'Bold' },
-];
 const SHAPES = [
   { id: 'orig', name: 'Original' },
   { id: '1:1', name: 'Square' },
@@ -41,12 +34,8 @@ const PAPER_COLORS = ['#FBF8F2', '#FFFFFF', '#C9A57D', '#F0D5D1', '#93AFD6', '#C
 const THREAD_COLORS = ['#C1121F', '#9E1B32', '#6B1E23', '#E79AA6', '#F1E6CF', '#FFFFFF', '#C9A24A', '#1C1A1A', '#23395B', '#5F7A52', '#9A7BC2', '#6FA3D8'];
 const LOOKS = [
   { name: 'Classic', paper: '#FBF8F2', thread: '#C1121F' },
-  { name: 'Wedding', paper: '#5A1A20', thread: '#F1E6CF' },
-  { name: 'Kraft', paper: '#C9A57D', thread: '#FFFFFF' },
-  { name: 'Blue hour', paper: '#93AFD6', thread: '#FFFFFF' },
-  { name: 'Blush', paper: '#F0D5D1', thread: '#9E1B32' },
+  { name: 'Maroon', paper: '#5A1A20', thread: '#F1E6CF' },
   { name: 'Noir', paper: '#262322', thread: '#E0313F' },
-  { name: 'Garden', paper: '#C2CBB0', thread: '#FBF8F2' },
   { name: 'Navy & gold', paper: '#1F2A44', thread: '#C9A24A' },
 ];
 
@@ -535,10 +524,6 @@ function select(id, { scroll = true } = {}) {
   const opts = { behavior: 'smooth', block: 'nearest' };
   if (el.type === 'photo') $('#photoEdit').scrollIntoView(opts);
   else if (el.type === 'text') $(`#wordFields [data-id="${el.id}"]`)?.scrollIntoView(opts);
-  else {
-    $('#sec-more').open = true;
-    $(el.type === 'motif' ? '#motifEdit' : '#frameEdit').scrollIntoView(opts);
-  }
 }
 
 function enterCrop(id) {
@@ -576,6 +561,26 @@ function placeAt(el, cx, cy) {
   el.x += cx - (b.x + b.w / 2);
   el.y += cy - (b.y + b.h / 2);
   if (isStitch(el)) snapStitch(doc, el);
+}
+
+/** The spot on the card where a w×h box overlaps the least, preferring the middle. */
+function freeSpot(w, h) {
+  const others = doc.elements.map((e) => boundsOf(doc, e));
+  let best = null;
+  for (let fy = 0.06; fy <= 0.94; fy += 0.02) {
+    for (const fx of [0.5, 0.35, 0.65, 0.2, 0.8]) {
+      const r = { x: doc.w * fx - w / 2, y: doc.h * fy - h / 2, w, h };
+      if (r.x < 0 || r.y < 0 || r.x + w > doc.w || r.y + h > doc.h) continue;
+      let overlap = 0;
+      for (const o of others) {
+        overlap += Math.max(0, Math.min(r.x + w, o.x + o.w) - Math.max(r.x, o.x))
+          * Math.max(0, Math.min(r.y + h, o.y + o.h) - Math.max(r.y, o.y));
+      }
+      const score = overlap + Math.abs(fx - 0.5) * 0.05 * w * h;
+      if (!best || score < best.score) best = { score, x: doc.w * fx, y: doc.h * fy };
+    }
+  }
+  return best || nextSpot();
 }
 
 let stagger = 0;
@@ -776,45 +781,6 @@ function frameEl(style) {
   };
 }
 
-function drawPreview(cv, bm, color = '#b3202a') {
-  const dpr = window.devicePixelRatio || 1;
-  const size = 46;
-  cv.width = cv.height = size * dpr;
-  const c = cv.getContext('2d');
-  c.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const s = Math.min((size - 4) / bm.w, (size - 4) / bm.h);
-  paintStitches(c, bm, (size - bm.w * s) / 2, (size - bm.h * s) / 2, s, color, 'real');
-}
-
-function buildMotifs() {
-  const grid = $('#motifGrid');
-  for (const m of MOTIFS) {
-    const b = document.createElement('button');
-    b.className = 'motif';
-    b.draggable = true;
-    b.title = `Add ${m.name.toLowerCase()}`;
-    const cv = document.createElement('canvas');
-    drawPreview(cv, motifPreviewBitmap(m.id));
-    b.append(cv, Object.assign(document.createElement('span'), { textContent: m.name }));
-    b.addEventListener('click', () => addElement(motifEl(m.id), { at: nextSpot() }));
-    b.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/x-stitch', JSON.stringify({ kind: 'motif', id: m.id })));
-    grid.appendChild(b);
-  }
-  const fgrid = $('#frameGrid');
-  for (const f of FRAMES) {
-    const b = document.createElement('button');
-    b.className = 'motif';
-    b.draggable = true;
-    b.title = `Add ${f.name.toLowerCase()} frame`;
-    const cv = document.createElement('canvas');
-    drawPreview(cv, framePreviewBitmap(f.id));
-    b.append(cv, Object.assign(document.createElement('span'), { textContent: f.name }));
-    b.addEventListener('click', () => addElement(frameEl(f.id)));
-    b.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/x-stitch', JSON.stringify({ kind: 'frame', id: f.id })));
-    fgrid.appendChild(b);
-  }
-}
-
 // ---------------------------------------------------------------- panel UI
 
 function chips(container, items, { onClick, solid = false } = {}) {
@@ -845,59 +811,42 @@ function swatches(container, colors, onClick) {
   }
 }
 
+/** Resizes the card and scales everything on it with the card, so the layout keeps its proportions. */
 function setCanvasSize(w, h) {
   w = clamp(+w || doc.w, 2, 16);
   h = clamp(+h || doc.h, 2, 16);
+  if (w === doc.w && h === doc.h) return;
+  flush();
   const fx = w / doc.w, fy = h / doc.h;
-  for (const el of doc.elements) {
+  const f = Math.min(fx, fy); // uniform factor so nothing gets stretched or pushed off the card
+  const items = doc.elements.map((el) => {
     const b = boundsOf(doc, el);
-    const cx = (b.x + b.w / 2) * fx, cy = (b.y + b.h / 2) * fy;
-    if (el.type === 'photo') {
-      const shrink = Math.min(1, (w * 0.95) / el.w, (h * 0.95) / el.h);
-      el.w *= shrink; el.h *= shrink;
-    }
-    el._c = [cx, cy];
-  }
+    return [el, (b.x + b.w / 2) * fx, (b.y + b.h / 2) * fy];
+  });
   doc.w = w; doc.h = h;
-  for (const el of doc.elements) {
-    if (el.type === 'frame') {
-      const g = gridOf(doc);
-      el.cols = Math.max(3, Math.round(el.cols * fx));
-      el.rows = Math.max(3, Math.round(el.rows * fy));
-      el.cols = Math.min(el.cols, g.cols);
-      el.rows = Math.min(el.rows, g.rows);
-    }
-    placeAt(el, ...el._c);
-    delete el._c;
-  }
-  commit();
-  render();
-}
-
-function setPitch(n) {
-  const p = 1 / n;
-  if (Math.abs(doc.pitch - p) < 1e-9) return;
-  const centers = doc.elements.map((el) => {
-    const b = boundsOf(doc, el);
-    return [b.x + b.w / 2, b.y + b.h / 2];
-  });
-  const ratio = doc.pitch / p;
-  doc.pitch = p;
-  doc.elements.forEach((el, i) => {
-    // keep everything about the same size on paper
-    if (el.type === 'text') {
-      el.size = Math.max(5, Math.round(el.size * ratio));
-      if (el.baseSize) el.baseSize = Math.max(5, Math.round(el.baseSize * ratio));
+  const g = gridOf(doc);
+  for (const [el, cx, cy] of items) {
+    if (el.type === 'photo') {
+      el.w *= f; el.h *= f;
+    } else if (el.type === 'text') {
+      el.size = Math.max(5, Math.round(el.size * f));
+      if (el.baseSize) el.baseSize = Math.max(5, Math.round(el.baseSize * f));
+      if (el.maxW) el.maxW *= f;
+      if (el.maxH) el.maxH *= f;
       fitText(doc, el);
+    } else if (el.type === 'motif') {
+      el.scale = Math.max(0.25, el.scale * f);
+    } else if (el.type === 'frame') {
+      el.cols = Math.min(g.cols, Math.max(3, Math.round(el.cols * fx)));
+      el.rows = Math.min(g.rows, Math.max(3, Math.round(el.rows * fy)));
     }
-    if (el.type === 'motif') el.scale = Math.max(1, Math.round(el.scale * ratio - 0.01));
-    if (el.type === 'frame') {
-      const g = gridOf(doc);
-      el.cols = Math.min(g.cols, Math.max(3, Math.round(el.cols * ratio)));
-      el.rows = Math.min(g.rows, Math.max(3, Math.round(el.rows * ratio)));
-    }
-    placeAt(el, ...centers[i]);
-  });
+    placeAt(el, cx, cy);
+    // keep it on the card
+    const b = boundsOf(doc, el);
+    if (b.w <= doc.w) el.x += Math.max(0, -b.x) - Math.max(0, b.x + b.w - doc.w);
+    if (b.h <= doc.h) el.y += Math.max(0, -b.y) - Math.max(0, b.y + b.h - doc.h);
+    if (isStitch(el)) snapStitch(doc, el);
+  }
   commit();
   render();
 }
@@ -912,20 +861,18 @@ function updateSelected(fn, { anchor = false, live = false } = {}) {
   return true;
 }
 
-function setThread(c, { live = false } = {}) {
+/** Thread color goes on every stitch on the card. */
+function setThread(c) {
   prefs.thread = c;
-  const el = selected();
-  if (el && isStitch(el)) el.color = c;
-  else for (const x of doc.elements) if (isStitch(x)) x.color = c;
+  for (const x of doc.elements) if (isStitch(x)) x.color = c;
+  commit();
   render();
-  if (live) { syncLive(); commitSoon(); } else commit();
 }
 
 function buildPanel() {
   buildTemplates();
-  buildSimpleControls();
 
-  // size & stitch
+  // size
   chips($('#sizeChips'), SIZES.map((s) => ({ id: `${s.w}x${s.h}`, html: `${s.w} × ${s.h}″<small>${s.note}</small>` })), {
     onClick: (id) => {
       const [a, b] = id.split('x').map(Number);
@@ -936,109 +883,14 @@ function buildPanel() {
   $('#wIn').addEventListener('change', (e) => setCanvasSize(e.target.value, doc.h));
   $('#hIn').addEventListener('change', (e) => setCanvasSize(doc.w, e.target.value));
   $('#swapBtn').addEventListener('click', () => setCanvasSize(doc.h, doc.w));
-  chips($('#pitchChips'), PITCHES.map((p) => ({ id: p.n, html: `${p.name}<small>${p.n}/in · ${(25.4 / p.n).toFixed(1)} mm</small>` })), {
-    onClick: (n) => setPitch(+n),
-  });
 
-  // 02 photos
-  $('#uploadBtn').addEventListener('click', () => pickFiles());
-  $('#addFrameBtn').addEventListener('click', () => {
-    const w = Math.min(doc.w * 0.55, 3), h = w * 1.2;
-    const spot = nextSpot();
-    addElement({
-      id: uid(), type: 'photo', imgId: null, x: spot.x - w / 2, y: spot.y - h / 2, w, h,
-      zoom: 1, panX: 0, panY: 0, filter: 'classic', edge: 'none', brightness: 0, contrast: 0,
-    }, { index: 0 });
-  });
-  chips($('#shapeChips'), SHAPES, { onClick: (id) => updateSelected((el) => setShape(el, id)) });
-  chips($('#edgeChips'), EDGES, { onClick: (id) => updateSelected((el) => { el.edge = id; }) });
-  $('#photoZoom').addEventListener('input', (e) => updateSelected((el) => { el.zoom = +e.target.value; }, { live: true }));
-  $('#photoBri').addEventListener('input', (e) => updateSelected((el) => { el.brightness = +e.target.value; }, { live: true }));
-  $('#photoCon').addEventListener('input', (e) => updateSelected((el) => { el.contrast = +e.target.value; }, { live: true }));
-  $('#cropBtn').addEventListener('click', () => (cropId ? exitCrop() : enterCrop(selectedId)));
-  $('#replaceBtn').addEventListener('click', () => pickFiles(selectedId));
-
-  // 03 text
-  const fontBox = $('#fontChips');
-  for (const f of FONTS) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'font-chip';
-    b.dataset.id = f.id;
-    b.append(fontPreview(f, 'love'), Object.assign(document.createElement('small'), { textContent: f.name }));
-    b.addEventListener('click', () => {
-      prefs.font = f.id;
-      if (!updateSelected((el) => { if (el.type === 'text') el.font = f.id; }, { anchor: true })) sync();
-    });
-    fontBox.appendChild(b);
-  }
-  const ta = $('#textInput');
-  ta.addEventListener('input', () => {
-    const el = selected();
-    if (el?.type === 'text') {
-      keepAnchor(el, () => { el.text = ta.value; fitText(doc, el); }, { vertical: !!el.slot });
-      render();
-      syncLive();
-      commitSoon(700);
-    } else {
-      prefs.draft = ta.value;
-    }
-  });
-  $('#textSize').addEventListener('input', (e) => {
-    prefs.size = +e.target.value;
-    const el = selected();
-    if (el?.type === 'text') updateSelected((x) => { x.size = x.baseSize = prefs.size; delete x.maxW; delete x.maxH; }, { anchor: true, live: true });
-    else syncLive();
-  });
-  chips($('#weightChips'), WEIGHTS, {
-    onClick: (id) => {
-      prefs.weight = +id;
-      if (!updateSelected((el) => { if (el.type === 'text') el.weight = +id; }, { anchor: true })) sync();
-    },
-  });
-  chips($('#alignChips'), [{ id: 'left', name: 'Left' }, { id: 'center', name: 'Center' }, { id: 'right', name: 'Right' }], {
-    onClick: (id) => {
-      prefs.align = id;
-      const el = selected();
-      if (el?.type === 'text') {
-        // re-align lines inside the block but keep the block where it is
-        const b0 = boundsOf(doc, el);
-        el.align = id;
-        const b1 = boundsOf(doc, el);
-        el.x += b0.x - b1.x;
-        snapStitch(doc, el);
-        commit();
-        render();
-      } else sync();
-    },
-  });
-  $('#addTextBtn').addEventListener('click', () => {
-    const text = ta.value.trim() || 'love';
-    prefs.draft = '';
-    addElement(textEl(text), { at: nextSpot() });
-  });
-
-  // 04 motifs
-  buildMotifs();
-  const scaleBy = (d) => updateSelected((el) => { el.scale = clamp((el.scale || 1) + d, 1, 10); }, { anchor: true });
-  $('#scaleDown').addEventListener('click', () => scaleBy(-1));
-  $('#scaleUp').addEventListener('click', () => scaleBy(1));
-  $('#rotBtn').addEventListener('click', () => updateSelected((el) => { el.rot = ((el.rot || 0) + 1) % 4; }, { anchor: true }));
-  $('#flipBtn').addEventListener('click', () => updateSelected((el) => { el.flip = !el.flip; }, { anchor: true }));
-  chips($('#frameStyleChips'), FRAMES, { onClick: (id) => updateSelected((el) => { el.style = id; }) });
-  $('#frameCols').addEventListener('change', (e) => updateSelected((el) => { el.cols = clamp(Math.round(+e.target.value) || el.cols, 3, 400); }));
-  $('#frameRows').addEventListener('change', (e) => updateSelected((el) => { el.rows = clamp(Math.round(+e.target.value) || el.rows, 3, 400); }));
-  $('#fitFrameBtn').addEventListener('click', () => updateSelected((el) => {
-    const f = frameEl(el.style);
-    Object.assign(el, { cols: f.cols, rows: f.rows, x: f.x, y: f.y });
-  }));
-
-  // 05 colors
+  // color presets, paper, thread
   const looks = $('#lookChips');
   for (const l of LOOKS) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'look';
+    b.dataset.id = l.name;
     b.innerHTML = `<div class="look-swatch" style="background:${l.paper};color:${l.thread}">✕✕</div><span>${l.name}</span>`;
     b.addEventListener('click', () => {
       doc.paper = l.paper;
@@ -1051,45 +903,35 @@ function buildPanel() {
   }
   swatches($('#paperSwatches'), PAPER_COLORS, (c) => { doc.paper = c; commit(); render(); });
   swatches($('#threadSwatches'), THREAD_COLORS, setThread);
-  const hexOk = (v) => /^#?[0-9a-f]{6}$/i.test(v.trim());
-  const norm = (v) => `#${v.trim().replace('#', '').toUpperCase()}`;
-  $('#paperPick').addEventListener('input', (e) => { doc.paper = e.target.value.toUpperCase(); render(); syncLive(); commitSoon(); });
-  $('#paperHex').addEventListener('change', (e) => { if (hexOk(e.target.value)) { doc.paper = norm(e.target.value); commit(); render(); } else sync(); });
-  $('#grainToggle').addEventListener('change', (e) => { doc.grain = e.target.checked; commit(); render(); });
-  $('#threadPick').addEventListener('input', (e) => setThread(e.target.value.toUpperCase(), { live: true }));
-  $('#threadHex').addEventListener('change', (e) => (hexOk(e.target.value) ? setThread(norm(e.target.value)) : sync()));
-  $('#threadAllBtn').addEventListener('click', () => {
-    const el = selected();
-    const c = el && isStitch(el) ? el.color : prefs.thread;
-    for (const x of doc.elements) if (isStitch(x)) x.color = c;
-    commit();
-    render();
-  });
 
-  for (const id of ['#textInput', '#textSize', '#photoZoom', '#photoBri', '#photoCon', '#paperPick', '#threadPick']) {
+  // photo
+  $('#uploadBtn').addEventListener('click', () => pickFiles());
+  buildStyleChips();
+  chips($('#shapeChips'), SHAPES, { onClick: (id) => updateSelected((el) => setShape(el, id)) });
+  chips($('#edgeChips'), EDGES, { onClick: (id) => updateSelected((el) => { el.edge = id; }) });
+  $('#photoZoom').addEventListener('input', (e) => updateSelected((el) => { el.zoom = +e.target.value; }, { live: true }));
+  $('#photoBri').addEventListener('input', (e) => updateSelected((el) => { el.brightness = +e.target.value; }, { live: true }));
+  $('#photoCon').addEventListener('input', (e) => updateSelected((el) => { el.contrast = +e.target.value; }, { live: true }));
+  $('#cropBtn').addEventListener('click', () => (cropId ? exitCrop() : enterCrop(selectedId)));
+  $('#replaceBtn').addEventListener('click', () => pickFiles(selectedId));
+  for (const id of ['#photoZoom', '#photoBri', '#photoCon']) {
     $(id).addEventListener('change', flush);
     $(id).addEventListener('blur', flush);
   }
 
-  // 06 print
-  $('#printBtn').addEventListener('click', openPrint);
-  $('#saveBtn').addEventListener('click', saveImage);
-  $('#saveBtn2').addEventListener('click', saveImage);
+  // text
+  buildLetterChips();
+  $('#addTextBtn').addEventListener('click', addTextBox);
 
-  // top bar & stage
+  // top bar, print dialog & stage
+  $('#printBtn').addEventListener('click', openPrint);
+  $('#saveBtn').addEventListener('click', () => { dialog.close(); saveImage(); });
   $('#undoBtn').addEventListener('click', undo);
   $('#redoBtn').addEventListener('click', redo);
   $('#newBtn').addEventListener('click', () => {
     if (!confirm('Start this template over from scratch? You can undo this.')) return;
     prefs.letter = null;
     applyTemplate(doc.template || TEMPLATES[0].id, { fresh: true });
-  });
-  $('#viewSeg').addEventListener('click', (e) => {
-    const v = e.target.closest('button')?.dataset.view;
-    if (!v) return;
-    view.mode = v;
-    sync();
-    render();
   });
   $('#gridToggle').addEventListener('change', (e) => { view.grid = e.target.checked; render(); });
   const zoomTo = (z) => { view.zoom = clamp(z, 0.5, 4); sync(); render(); };
@@ -1175,8 +1017,12 @@ function buildStyleChips() {
   }
 }
 
-function buildSimpleControls() {
-  buildStyleChips();
+/** The lettering style in use: whatever the text on the card uses, else the last one picked. */
+function currentLetter() {
+  return doc.elements.find((e) => e.type === 'text')?.font || prefs.letter || 'viceroy';
+}
+
+function buildLetterChips() {
   const box = $('#letterChips');
   for (const f of FONTS) {
     const b = document.createElement('button');
@@ -1196,6 +1042,28 @@ function buildSimpleControls() {
     });
     box.appendChild(b);
   }
+}
+
+/** Adds a new text box in the current lettering, sized to suit the card, and puts the cursor in it. */
+function addTextBox() {
+  flush();
+  const font = currentLetter();
+  const f = FONTS.find((x) => x.id === font) || FONTS[0];
+  const size = f.kind === 'chart' ? nativeSize(f) : Math.max(8, Math.round(Math.min(doc.w, doc.h) * 0.16 / doc.pitch));
+  const el = {
+    id: uid(), type: 'text', text: 'love', font: f.id, size, baseSize: size, weight: 0, align: 'center',
+    color: doc.elements.find(isStitch)?.color || prefs.thread, x: 0, y: 0, maxW: doc.w * 0.6, maxH: doc.h * 0.2,
+  };
+  fitText(doc, el);
+  const b = boundsOf(doc, el);
+  addElement(el, { at: freeSpot(b.w, b.h) });
+  requestAnimationFrame(() => {
+    const input = $(`#word-${el.id}`);
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    input.select();
+    input.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
 }
 
 /** A stitched sample of a lettering style, for the style buttons. */
@@ -1228,16 +1096,29 @@ function syncWords() {
   if (key !== wordKey) {
     wordKey = key;
     box.innerHTML = '';
-    if (!texts.length) {
-      box.innerHTML = '<p class="word-empty">No words on this design. Add some under “Make it your own” below.</p>';
-    }
+    if (!texts.length) box.innerHTML = '<p class="word-empty">No text yet.</p>';
     texts.forEach((el, i) => {
       const wrap = document.createElement('div');
       wrap.className = 'word-field';
       wrap.dataset.id = el.id;
+      const head = document.createElement('div');
+      head.className = 'word-head';
       const label = document.createElement('label');
       label.htmlFor = `word-${el.id}`;
-      label.textContent = el.label || (texts.length > 1 ? `Words ${i + 1}` : 'Words');
+      label.textContent = `Text ${i + 1}`;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'word-del';
+      del.title = 'Remove this text';
+      del.setAttribute('aria-label', `Remove text ${i + 1}`);
+      del.textContent = '×';
+      del.addEventListener('click', () => {
+        doc.elements = doc.elements.filter((e) => e.id !== el.id);
+        if (selectedId === el.id) selectedId = null;
+        commit();
+        render();
+      });
+      head.append(label, del);
       const multi = el.text.includes('\n');
       const input = document.createElement(multi ? 'textarea' : 'input');
       input.id = `word-${el.id}`;
@@ -1257,7 +1138,7 @@ function syncWords() {
       input.addEventListener('focus', () => select(el.id, { scroll: false }));
       input.addEventListener('blur', flush);
       input.addEventListener('change', flush);
-      wrap.append(label, input);
+      wrap.append(head, input);
       box.appendChild(wrap);
     });
   }
@@ -1267,8 +1148,7 @@ function syncWords() {
     if (el && document.activeElement !== input && input.value !== el.text) input.value = el.text;
     wrap.classList.toggle('on', wrap.dataset.id === selectedId);
   }
-  const first = texts[0];
-  setOn($('#letterChips'), first ? first.font : prefs.letter || prefs.font);
+  setOn($('#letterChips'), currentLetter());
 }
 
 async function saveImage() {
@@ -1358,26 +1238,12 @@ function buildFilterThumbs(el) {
 /** Light sync for things that change continuously while dragging/sliding. */
 function syncLive() {
   const el = selected();
-  const st = stats(doc);
-  const g = gridOf(doc);
-  $('#stats').innerHTML = `<b>${st.stitches.toLocaleString()}</b> stitches · <b>${st.holes.toLocaleString()}</b> holes to punch<br>~${formatLength(st.threadIn)} of thread · ${g.cols} × ${g.rows} squares`;
-  const ts = el?.type === 'text' ? el.size : prefs.size;
-  $('#textSizeOut').textContent = `${(ts * doc.pitch).toFixed(2)}″ · ${ts} st`;
-  if (el?.type === 'photo') {
-    $('#photoZoom').value = el.zoom || 1;
-  }
-  if (el?.type === 'frame' && document.activeElement?.id !== 'frameCols' && document.activeElement?.id !== 'frameRows') {
-    $('#frameCols').value = el.cols;
-    $('#frameRows').value = el.rows;
-  }
-  const paperHex = $('#paperHex');
-  if (document.activeElement !== paperHex) paperHex.value = doc.paper.toUpperCase();
-  $('#paperPick').value = doc.paper.toLowerCase();
-  const threadColor = el && isStitch(el) ? el.color : prefs.thread;
-  if (document.activeElement !== $('#threadHex')) $('#threadHex').value = threadColor.toUpperCase();
-  $('#threadPick').value = threadColor.toLowerCase();
+  if (el?.type === 'photo') $('#photoZoom').value = el.zoom || 1;
+  const threadColor = doc.elements.find(isStitch)?.color || prefs.thread;
   setOn($('#paperSwatches'), doc.paper.toUpperCase());
   setOn($('#threadSwatches'), threadColor.toUpperCase());
+  const look = LOOKS.find((l) => l.paper === doc.paper.toUpperCase() && l.thread === threadColor.toUpperCase());
+  setOn($('#lookChips'), look ? look.name : '');
 }
 
 function sync() {
@@ -1385,22 +1251,16 @@ function sync() {
   const g = gridOf(doc);
 
   setOn($('#templateGrid'), doc.template || '');
-  buildStyleChips();
-  const photos = allPhotos();
-  const shared = photos.length && photos.every((p) => p.filter === photos[0].filter) ? photos[0].filter : '';
-  setOn($('#styleChips'), shared);
-  syncWords();
-
-  // 01
   const sizeId = SIZES.find((s) => (s.w === doc.w && s.h === doc.h) || (s.w === doc.h && s.h === doc.w));
   setOn($('#sizeChips'), sizeId ? `${sizeId.w}x${sizeId.h}` : '');
   if (document.activeElement !== $('#wIn')) $('#wIn').value = +doc.w.toFixed(2);
   if (document.activeElement !== $('#hIn')) $('#hIn').value = +doc.h.toFixed(2);
-  setOn($('#pitchChips'), Math.round(1 / doc.pitch));
-  $('#gridInfo').textContent = `${g.cols} × ${g.rows} squares · ${(g.cols + 1) * (g.rows + 1)} possible holes · ${(doc.w * 2.54).toFixed(1)} × ${(doc.h * 2.54).toFixed(1)} cm`;
   $('#footInfo').textContent = `${inchLabel(doc.w)} × ${inchLabel(doc.h)} · ${g.cols} × ${g.rows} squares`;
 
-  // 02
+  buildStyleChips();
+  const photos = allPhotos();
+  const shared = photos.length && photos.every((p) => p.filter === photos[0].filter) ? photos[0].filter : '';
+  setOn($('#styleChips'), shared);
   const isPhoto = el?.type === 'photo';
   $('#photoEdit').hidden = !isPhoto;
   if (isPhoto) {
@@ -1416,32 +1276,10 @@ function sync() {
     $('#replaceBtn').textContent = has ? 'Replace photo' : 'Choose photo';
   }
 
-  // 03
-  const t = el?.type === 'text' ? el : null;
-  const ta = $('#textInput');
-  if (document.activeElement !== ta) ta.value = t ? t.text : prefs.draft;
-  setOn($('#fontChips'), t ? t.font : prefs.font);
-  setOn($('#weightChips'), t ? t.weight : prefs.weight);
-  setOn($('#alignChips'), t ? t.align : prefs.align);
-  $('#textSize').value = t ? t.size : prefs.size;
-  $('#addTextBtn').textContent = t ? 'Add as new text' : 'Add text';
+  syncWords();
 
-  // 04
-  $('#motifEdit').hidden = el?.type !== 'motif';
-  if (el?.type === 'motif') $('#scaleOut').textContent = `${el.scale}×`;
-  $('#frameEdit').hidden = el?.type !== 'frame';
-  if (el?.type === 'frame') setOn($('#frameStyleChips'), el.style);
-
-  // 05
-  $('#grainToggle').checked = !!doc.grain;
-  const one = el && isStitch(el);
-  $('#threadTarget').textContent = one ? '· just the selected piece' : '· all stitches';
-  $('#threadAllBtn').hidden = !one;
-
-  // misc
   $('#undoBtn').disabled = history.index <= 0;
   $('#redoBtn').disabled = history.index >= history.stack.length - 1;
-  $('#viewSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.view === view.mode));
   $('#zoomLabel').textContent = view.zoom === 1 ? 'Fit' : `${Math.round(view.zoom * 100)}%`;
   buildContextBar();
   syncLive();

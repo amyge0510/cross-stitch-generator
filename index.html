@@ -24,7 +24,7 @@
       <div class="topbar-right">
         <button class="ghost icon-btn" id="undoBtn" title="Undo (⌘Z)" disabled>↶ <span>Undo</span></button>
         <button class="ghost icon-btn" id="redoBtn" title="Redo (⇧⌘Z)" disabled>↷ <span>Redo</span></button>
-        <button class="dark" id="saveBtn">Save image</button>
+        <button class="dark" id="printBtn">Print punch template</button>
       </div>
     </header>
 
@@ -36,10 +36,6 @@
           <div class="drop-hint" id="dropHint" hidden>Drop to add</div>
         </div>
         <div class="stage-foot">
-          <div class="seg" id="viewSeg" role="tablist" aria-label="View">
-            <button data-view="real" class="on">Stitched</button>
-            <button data-view="pattern">Holes</button>
-          </div>
           <label class="check"><input type="checkbox" id="gridToggle"> Show grid</label>
           <span class="foot-info" id="footInfo"></span>
           <div class="zoom">
@@ -56,8 +52,36 @@
           <div class="template-grid" id="templateGrid"></div>
         </section>
 
+        <section class="card" id="sec-canvas">
+          <h2><span class="num">02</span> Size</h2>
+          <div class="chips" id="sizeChips"></div>
+          <div class="custom-size">
+            <label>W <input type="number" id="wIn" min="2" max="16" step="0.25"></label>
+            <span class="x">×</span>
+            <label>H <input type="number" id="hIn" min="2" max="16" step="0.25"></label>
+            <span class="unit">in</span>
+            <button class="small" id="swapBtn" title="Swap portrait / landscape">⇄ Rotate</button>
+          </div>
+        </section>
+
+        <section class="card" id="sec-looks">
+          <h2><span class="num">03</span> Colors</h2>
+          <div class="looks" id="lookChips"></div>
+        </section>
+
+        <div class="card-row">
+          <section class="card" id="sec-paper">
+            <h2><span class="num">04</span> Paper</h2>
+            <div class="swatches" id="paperSwatches"></div>
+          </section>
+          <section class="card" id="sec-thread">
+            <h2><span class="num">05</span> Thread</h2>
+            <div class="swatches" id="threadSwatches"></div>
+          </section>
+        </div>
+
         <section class="card" id="sec-photos">
-          <h2><span class="num">02</span> Add your photo</h2>
+          <h2><span class="num">06</span> Photo</h2>
           <button class="dropzone" id="uploadBtn">
             <strong>＋ Upload photos</strong>
             <small>they fill the photo spots in order · or drag onto the card</small>
@@ -84,99 +108,12 @@
         </section>
 
         <section class="card" id="sec-words">
-          <h2><span class="num">03</span> Your words</h2>
-          <div class="word-fields" id="wordFields"></div>
-          <div class="sub">Lettering</div>
+          <h2><span class="num">07</span> Text</h2>
           <div class="fonts" id="letterChips"></div>
+          <div class="word-fields" id="wordFields"></div>
+          <button class="wide" id="addTextBtn">＋ Add text</button>
         </section>
 
-        <section class="card" id="sec-colors">
-          <h2><span class="num">04</span> Colors</h2>
-          <div class="looks" id="lookChips"></div>
-          <div class="sub">Paper</div>
-          <div class="swatches" id="paperSwatches"></div>
-          <div class="color-row">
-            <input type="color" id="paperPick" aria-label="Paper color">
-            <input type="text" id="paperHex" maxlength="7" spellcheck="false" aria-label="Paper hex color">
-            <label class="check"><input type="checkbox" id="grainToggle"> Paper grain</label>
-          </div>
-          <div class="sub">Thread <span class="target" id="threadTarget"></span></div>
-          <div class="swatches" id="threadSwatches"></div>
-          <div class="color-row">
-            <input type="color" id="threadPick" aria-label="Thread color">
-            <input type="text" id="threadHex" maxlength="7" spellcheck="false" aria-label="Thread hex color">
-            <button class="small" id="threadAllBtn" hidden>Use on all stitches</button>
-          </div>
-        </section>
-
-        <section class="card" id="sec-canvas">
-          <h2><span class="num">05</span> Size &amp; stitch</h2>
-          <div class="chips" id="sizeChips"></div>
-          <div class="custom-size">
-            <label>W <input type="number" id="wIn" min="2" max="16" step="0.25"></label>
-            <span class="x">×</span>
-            <label>H <input type="number" id="hIn" min="2" max="16" step="0.25"></label>
-            <span class="unit">in</span>
-            <button class="small" id="swapBtn" title="Swap portrait / landscape">⇄ Rotate</button>
-          </div>
-          <div class="sub">Hole spacing</div>
-          <div class="chips" id="pitchChips"></div>
-          <p class="hint" id="gridInfo"></p>
-        </section>
-
-        <section class="card" id="sec-print">
-          <h2><span class="num">06</span> Print &amp; punch</h2>
-          <p class="stats" id="stats"></p>
-          <button class="dark wide big" id="printBtn">Print punch template</button>
-          <button class="wide" id="saveBtn2">Save image</button>
-        </section>
-
-        <details class="card more" id="sec-more">
-          <summary>
-            <span class="more-title">Make it your own</span>
-            <small>add more words, motifs &amp; frames, and arrange them freely</small>
-          </summary>
-
-          <div id="sec-text">
-            <div class="sub">Add words</div>
-            <textarea id="textInput" rows="2" placeholder="Initials, names, a date, a little phrase…"></textarea>
-            <div class="fonts" id="fontChips"></div>
-            <label class="slider">Size <input type="range" id="textSize" min="6" max="160" step="1"> <output id="textSizeOut"></output></label>
-            <div class="sub">Thread weight</div>
-            <div class="chips" id="weightChips"></div>
-            <div class="sub">Align</div>
-            <div class="chips" id="alignChips"></div>
-            <button class="wide" id="addTextBtn">Add text</button>
-          </div>
-
-          <div id="sec-motifs">
-            <div class="sub">Stitched motifs <span class="target">· click or drag onto the card</span></div>
-            <div class="motif-grid" id="motifGrid"></div>
-            <div class="sub">Frames</div>
-            <div class="motif-grid frames" id="frameGrid"></div>
-            <div class="edit-block" id="motifEdit" hidden>
-              <div class="edit-title">Selected motif</div>
-              <div class="stepper-row">
-                <span>Size</span>
-                <div class="stepper"><button id="scaleDown">−</button><output id="scaleOut">1×</output><button id="scaleUp">+</button></div>
-                <button class="small" id="rotBtn">↻ Rotate</button>
-                <button class="small" id="flipBtn">⇋ Flip</button>
-              </div>
-            </div>
-            <div class="edit-block" id="frameEdit" hidden>
-              <div class="edit-title">Selected frame</div>
-              <div class="chips" id="frameStyleChips"></div>
-              <div class="custom-size">
-                <label>W <input type="number" id="frameCols" min="3" max="400"></label>
-                <span class="x">×</span>
-                <label>H <input type="number" id="frameRows" min="3" max="400"></label>
-                <span class="unit">stitches</span>
-              </div>
-              <button class="small" id="fitFrameBtn">Fit around the card edge</button>
-            </div>
-          </div>
-          <button class="link" id="addFrameBtn">Add another photo spot</button>
-        </details>
         <p class="micro">MADE PRIVATELY IN YOUR BROWSER</p>
         <p class="credits">Antique alphabet charted by the <a href="https://www.antiquepatternlibrary.org" target="_blank" rel="noopener">Antique Pattern Library</a>, CC BY-NC-SA 4.0. Viceroy alphabet from the “Monograma Viceroy” chart.</p>
       </aside>
@@ -208,6 +145,7 @@
       </ol>
       <div class="dialog-actions">
         <button value="cancel" class="ghost">Cancel</button>
+        <button type="button" class="ghost" id="saveBtn">Save image instead</button>
         <button value="print" class="dark" id="doPrint">Print</button>
       </div>
     </form>
