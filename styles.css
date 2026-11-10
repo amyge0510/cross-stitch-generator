@@ -306,7 +306,7 @@ dialog::backdrop { background: rgba(42, 32, 28, 0.45); }
 }
 
 /* ---------- templates & simple flow ---------- */
-.template-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.template-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .template {
   border: 1px solid var(--card-line); background: #fff; border-radius: 12px; padding: 6px 6px 8px;
   display: flex; flex-direction: column; align-items: stretch; gap: 6px; text-align: left;

@@ -1,90 +1,77 @@
-// Ready-made layouts. Most people pick one, add a photo, type their initials and print.
+// Ready-made layouts. Most people pick one, add a photo, type their words and print.
 // Everything is in inches on the template's own card, so templates work at any hole spacing.
 //   photo: x, y, w, h
-//   text:  slot (kept when switching templates), label (shown in "Your words"), text, cx, cy (center), h (letter size),
+//   text:  slot (kept when switching templates), text, cx, cy (center), h (letter size), weight,
 //          maxW / maxH: the box it must fit in; longer words shrink to fit
 //   motif: motif id, cx, cy, h (target height; picks the nearest whole-stitch scale), rot, flip
-//   frame: style, inset
+//   frame: style, inset (supported, though no current template uses one)
 import { MOTIFS } from './motifs.js';
 import { boundsOf, snapStitch, gridOf } from './render.js';
 
 const PHOTO = (x, y, w, h, extra = {}) => ({ type: 'photo', x, y, w, h, ...extra });
 
+// Recreations of real cards people have stitched. Positions were measured from reference photos.
 export const TEMPLATES = [
   {
-    // The classic: an 8×10 frame, a landscape photo in the middle, initials in opposite corners.
-    id: 'initials', name: 'Initials', note: 'photo + two initials',
-    w: 8, h: 10, paper: '#5A1A20', thread: '#F1E6CF', font: 'viceroy',
+    // White mat, color photo, a script initial overlapping two opposite corners of the photo.
+    id: 'initials', name: 'Initials', note: 'white mat, two initials',
+    w: 7, h: 5, paper: '#FBF8F2', thread: '#C1121F', font: 'viceroy',
     elements: [
-      PHOTO(1.0, 3.0, 6.0, 4.0),
-      { type: 'text', slot: 'i1', label: 'First initial', text: 'A', cx: 1.95, cy: 1.55, h: 2.5, maxW: 3.3, maxH: 2.4 },
-      { type: 'text', slot: 'i2', label: 'Second initial', text: 'J', cx: 6.05, cy: 8.45, h: 2.5, maxW: 3.3, maxH: 2.4 },
-      { type: 'motif', motif: 'twinkles', cx: 6.35, cy: 1.5, h: 1.1 },
-      { type: 'motif', motif: 'sprig', cx: 1.6, cy: 8.45, h: 1.6 },
+      PHOTO(1.66, 0.97, 3.6, 2.73, { filter: 'original' }),
+      { type: 'text', slot: 'i1', text: 'A', cx: 1.43, cy: 1.08, h: 2.5, maxW: 2.5, maxH: 1.9 },
+      { type: 'text', slot: 'i2', text: 'J', cx: 5.3, cy: 3.77, h: 2.5, maxW: 2.5, maxH: 1.9 },
     ],
   },
   {
-    id: 'words', name: 'Words', note: 'a line above & below',
-    w: 8, h: 10, paper: '#FBF8F2', thread: '#C1121F', font: 'hand',
-    elements: [
-      PHOTO(1.75, 2.35, 4.5, 5.3),
-      { type: 'text', slot: 'top', label: 'Top line', text: 'how lucky', cx: 4, cy: 1.15, h: 1.6, maxW: 7.2, maxH: 1.9 },
-      { type: 'text', slot: 'bottom', label: 'Bottom line', text: 'are we', cx: 4, cy: 8.8, h: 1.6, maxW: 7.2, maxH: 1.8 },
-    ],
-  },
-  {
-    id: 'date', name: 'Initials & date', note: 'for anniversaries',
-    w: 6, h: 8, paper: '#F0D5D1', thread: '#9E1B32', font: 'viceroy',
-    elements: [
-      PHOTO(0.8, 2.6, 4.4, 3.2),
-      { type: 'text', slot: 'names', label: 'Initials or names', text: 'A + J', cx: 3, cy: 1.3, h: 2.5, maxW: 5.6, maxH: 2.3 },
-      { type: 'text', slot: 'date', label: 'Date', text: '06.14.26', cx: 3, cy: 6.55, h: 1.0, font: 'hand', weight: 1, maxW: 4.5, maxH: 1.1 },
-      { type: 'motif', motif: 'heart', cx: 3, cy: 7.45, h: 0.5 },
-    ],
-  },
-  {
-    id: 'rose', name: 'Rose', note: 'one big stitched rose',
-    w: 6, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'hand',
-    elements: [
-      PHOTO(3.3, 0.6, 2.3, 3.0),
-      { type: 'motif', motif: 'long-rose', cx: 1.75, cy: 5.25, h: 4 },
-      { type: 'text', slot: 'phrase', label: 'Words', text: 'forever', cx: 4.45, cy: 4.7, h: 1.25, maxW: 2.9, maxH: 1.5 },
-    ],
-  },
-  {
-    id: 'frame', name: 'Framed', note: 'folk border all around',
-    w: 6, h: 6, paper: '#FBF8F2', thread: '#C1121F', font: 'hand',
-    elements: [
-      { type: 'frame', style: 'folk', inset: 0.25 },
-      PHOTO(1.5, 0.85, 3.0, 3.0),
-      { type: 'text', slot: 'phrase', label: 'Words', text: 'you & me', cx: 3, cy: 4.75, h: 1.25, maxW: 4.8, maxH: 1.4 },
-    ],
-  },
-  {
-    id: 'strip', name: 'Photo strip', note: 'three photos, one strip',
-    w: 3.5, h: 10, paper: '#1F2A44', thread: '#C9A24A', font: 'hand',
-    elements: [
-      PHOTO(0.4, 0.4, 2.7, 2.1),
-      PHOTO(0.4, 2.7, 2.7, 2.1),
-      PHOTO(0.4, 5.0, 2.7, 2.1),
-      { type: 'text', slot: 'names', label: 'Initials or names', text: 'A & J', cx: 1.75, cy: 8.05, h: 1.4, maxW: 3.0, maxH: 1.6 },
-      { type: 'motif', motif: 'mini-hearts', cx: 1.75, cy: 9.25, h: 0.55 },
-    ],
-  },
-  {
-    id: 'collage', name: 'Collage', note: 'two photos, a phrase',
+    // "where love grows": chunky script words around a black & white photo, and a little heart.
+    id: 'words', name: 'Love note', note: 'words around the photo',
     w: 7, h: 5, paper: '#FFFFFF', thread: '#C1121F', font: 'hand',
     elements: [
-      PHOTO(0.45, 0.85, 2.5, 3.3),
-      PHOTO(2.45, 1.85, 1.85, 2.5),
-      { type: 'motif', motif: 'lattice', cx: 0.95, cy: 0.95, h: 1.4 },
-      { type: 'text', slot: 'phrase', label: 'Words', text: 'love,\nalways', cx: 5.5, cy: 1.9, h: 1.15, maxW: 2.9, maxH: 2.7 },
-      { type: 'motif', motif: 'rose', cx: 5.6, cy: 3.95, h: 1.2 },
+      PHOTO(1.68, 0.96, 3.7, 2.95, { filter: 'classic' }),
+      { type: 'text', slot: 'w1', text: 'where', cx: 1.66, cy: 0.91, h: 1.35, weight: 2, maxW: 2.9, maxH: 1.4 },
+      { type: 'text', slot: 'w2', text: 'love', cx: 5.75, cy: 1.35, h: 1.35, weight: 2, maxW: 2.2, maxH: 1.4 },
+      { type: 'text', slot: 'w3', text: 'grows', cx: 4.15, cy: 3.99, h: 1.35, weight: 2, maxW: 2.9, maxH: 1.5 },
+      { type: 'motif', motif: 'heart', cx: 1.59, cy: 3.37, h: 0.55 },
+    ],
+  },
+  {
+    // Cream monogram initials on a maroon mat around a black & white wedding photo.
+    id: 'monogram', name: 'Monogram', note: 'cream on maroon',
+    w: 7, h: 5, paper: '#5A1A20', thread: '#F1E6CF', font: 'viceroy',
+    elements: [
+      PHOTO(1.32, 0.93, 4.34, 2.87, { filter: 'classic' }),
+      { type: 'text', slot: 'i1', text: 'A', cx: 1.22, cy: 1.09, h: 2.5, maxW: 2.2, maxH: 1.9 },
+      { type: 'text', slot: 'i2', text: 'J', cx: 5.83, cy: 3.82, h: 2.5, maxW: 2.2, maxH: 1.9 },
+    ],
+  },
+  {
+    // A big color photo, "you + me" in thin script stitched over its corner, sparkles around.
+    id: 'youme', name: 'You + me', note: 'script & sparkles',
+    w: 7, h: 5, paper: '#FFFFFF', thread: '#C1121F', font: 'hand',
+    elements: [
+      PHOTO(0.83, 0.87, 5.0, 3.3, { filter: 'original' }),
+      { type: 'text', slot: 'phrase', text: 'you\n+ me', cx: 4.7, cy: 3.05, h: 1.45, weight: 0, maxW: 3.4, maxH: 3.1 },
+      { type: 'motif', motif: 'sparkle', cx: 5.33, cy: 0.87, h: 0.5 },
+      { type: 'motif', motif: 'sparkle-small', cx: 3.89, cy: 1.0, h: 0.36 },
+      { type: 'motif', motif: 'sparkle-small', cx: 5.8, cy: 1.68, h: 0.36 },
+      { type: 'motif', motif: 'sparkle-small', cx: 3.09, cy: 3.4, h: 0.36 },
+      { type: 'motif', motif: 'sparkle', cx: 1.44, cy: 4.18, h: 0.5 },
+      { type: 'motif', motif: 'sparkle-small', cx: 3.91, cy: 3.85, h: 0.36 },
+    ],
+  },
+  {
+    // Two blocky rose sprigs climbing the left edge of a portrait photo.
+    id: 'roses', name: 'Roses', note: 'red rose sprigs',
+    w: 6, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'hand',
+    elements: [
+      PHOTO(2.4, 1.6, 3.2, 4.4, { filter: 'original' }),
+      { type: 'motif', motif: 'rose-sprig', cx: 2.35, cy: 2.65, h: 2.0 },
+      { type: 'motif', motif: 'rose-sprig', cx: 1.6, cy: 4.75, h: 2.0, flip: true },
     ],
   },
   {
     id: 'blank', name: 'Blank', note: 'start from scratch',
-    w: 5, h: 7, paper: '#FBF8F2', thread: '#C1121F', font: 'viceroy',
+    w: 7, h: 5, paper: '#FBF8F2', thread: '#C1121F', font: 'viceroy',
     elements: [],
   },
 ];

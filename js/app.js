@@ -41,7 +41,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v3';
+const STORE = 'stitched:v4';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -962,7 +962,7 @@ function renderTemplateThumbs() {
     const t = templateById(b.dataset.id);
     const cv = b.querySelector('canvas');
     const d = buildTemplate(t, { pitch: DEFAULT_PITCH, uid });
-    const ppi = Math.min(84 / t.w, 80 / t.h);
+    const ppi = Math.min(108 / t.w, 80 / t.h);
     cv.width = Math.round(t.w * ppi * dpr);
     cv.height = Math.round(t.h * ppi * dpr);
     cv.style.width = `${t.w * ppi}px`;
