@@ -5,7 +5,9 @@ export const PAPERS = {
   letter: { w: 8.5, h: 11, name: 'US Letter' },
   a4: { w: 8.27, h: 11.69, name: 'A4' },
 };
-const MARGIN = 0.2; // printable margin on every side, inches
+// Browsers often add their own print margins (Safari ignores `@page { margin: 0 }`), so leave room for
+// ~0.4" on every side; otherwise a full-height sheet spills onto a blank second page.
+const MARGIN = 0.4;
 const TRIM = 0.3; // room around the design for trim marks
 
 export function formatLength(inches) {
@@ -109,8 +111,7 @@ export async function printDesign(doc, images, o) {
   const sheet = (inner) => {
     const s = document.createElement('div');
     s.className = 'sheet';
-    s.style.width = `${page.w}in`;
-    s.style.height = `${page.h}in`;
+    // no fixed page-sized box: the sheet is only as tall as its content, so it can never overflow a page
     s.appendChild(inner);
     root.appendChild(s);
     return s;

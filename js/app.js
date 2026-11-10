@@ -40,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v23';
+const STORE = 'stitched:v24';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -1365,45 +1365,18 @@ const allPhotos = () => doc.elements.filter((e) => e.type === 'photo');
 const selectedPhoto = () => (single()?.type === 'photo' ? single() : null);
 
 /** Photo style applies to the selected photo, or to every photo when none is selected. */
-let styleFor = null;
 function buildStyleChips() {
-  const sel = selectedPhoto();
-  const src = sel && images.get(sel.imgId) ? sel : allPhotos().find((e) => images.get(e.imgId));
-  const key = src ? src.imgId : 'none';
-  if (styleFor === key) return;
-  styleFor = key;
   const box = $('#styleChips');
-  box.innerHTML = '';
-  const image = src && images.get(src.imgId);
-  const small = image ? applyFilter(image.img, image.w, image.h, 'original', 0, 0, 120) : null;
-  for (const f of FILTERS) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'filter';
-    b.dataset.id = f.id;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = 80;
-    const g = cv.getContext('2d');
-    if (small) {
-      const t = applyFilter(small, small.width, small.height, f.id, 0, 0, 120);
-      const sc = Math.max(80 / t.width, 80 / t.height);
-      g.drawImage(t, (80 - t.width * sc) / 2, (80 - t.height * sc) / 2, t.width * sc, t.height * sc);
-    } else {
-      const grad = g.createLinearGradient(0, 0, 80, 80);
-      grad.addColorStop(0, '#e9c9b5'); grad.addColorStop(1, '#6d8fb3');
-      g.fillStyle = grad; g.fillRect(0, 0, 80, 80);
-      g.drawImage(applyFilter(cv, 80, 80, f.id, 0, 0, 80), 0, 0);
-    }
-    b.append(cv, document.createTextNode(f.name));
-    b.addEventListener('click', () => {
+  if (box.childElementCount) return;
+  chips(box, FILTERS, {
+    onClick: (id) => {
       const photos = allPhotos();
       if (!photos.length) { toast('This design has no photo spots. Pick a template with a photo.'); return; }
-      for (const p of photos) p.filter = f.id;
+      for (const p of photos) p.filter = id;
       commit();
       render();
-    });
-    box.appendChild(b);
-  }
+    },
+  });
 }
 
 /** The lettering style in use: whatever the text on the card uses, else the last one picked. */

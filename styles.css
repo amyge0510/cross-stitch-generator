@@ -275,19 +275,15 @@ dialog::backdrop { background: rgba(42, 32, 28, 0.45); }
 
 /* ---------- print ---------- */
 @media print {
-  body { background: #fff; }
+  html, body { margin: 0; padding: 0; height: auto; background: #fff; }
   .app, dialog, .toast { display: none !important; }
   #printRoot { display: block; }
   .sheet {
-    position: relative; display: flex; align-items: center; justify-content: center;
-    page-break-after: always; break-after: page; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center; gap: 0.06in;
+    break-inside: avoid; page-break-inside: avoid; break-after: avoid; page-break-after: avoid;
   }
-  .sheet:last-child { page-break-after: auto; break-after: auto; }
   .sheet img { display: block; }
-  .sheet-note {
-    position: absolute; bottom: 0.18in; left: 0; right: 0; margin: 0; text-align: center;
-    font: 8pt var(--mono); color: #777;
-  }
+  .sheet-note { margin: 0; text-align: center; font: 7pt var(--mono); color: #777; }
 }
 
 /* ---------- templates & simple flow ---------- */
