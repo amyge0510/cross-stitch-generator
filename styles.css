@@ -318,7 +318,7 @@ dialog::backdrop { background: rgba(42, 32, 28, 0.45); }
 .template strong { font-size: 13px; font-weight: 600; line-height: 1.1; }
 .template small { font: 10px/1.2 var(--mono); color: var(--muted); }
 
-.filters.compact { grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); }
+.filters.compact { grid-template-columns: repeat(4, 1fr); }
 .filters.compact .filter { font-size: 10.5px; }
 
 .word-fields { display: grid; gap: 10px; }

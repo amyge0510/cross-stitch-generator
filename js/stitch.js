@@ -7,13 +7,12 @@ import { CHART_FONTS } from './chartfonts.js';
 // "type" fonts are web fonts turned into stitches. Charted letters are stitched exactly as charted
 // at their native size (or a whole multiple of it) and resampled only when they must shrink or grow.
 export const FONTS = [
-  { id: 'viceroy', name: 'Viceroy', kind: 'chart', fallbackWeight: 1 },
-  { id: 'antique', name: 'Antique', kind: 'chart', fallbackWeight: 0 },
-  { id: 'hand', name: 'Handwritten', kind: 'type', family: '"Dancing Script"', weight: 700, style: 'normal', lh: 1.0, scale: 1.0 },
+  { id: 'viceroy', name: 'Viceroy', kind: 'chart' },
+  { id: 'antique', name: 'Antique', kind: 'chart' },
+  { id: 'simple', name: 'Simple', kind: 'chart' },
 ];
-// Designs saved with the earlier generated fonts map onto the closest current style.
-const ALIASES = { dancing: 'hand', pacifico: 'hand', yellowtail: 'hand', playfair: 'hand', vibes: 'viceroy' };
-const HAND = FONTS[2];
+// Designs saved with earlier styles map onto the closest current one.
+const ALIASES = { hand: 'simple', dancing: 'simple', pacifico: 'simple', yellowtail: 'simple', playfair: 'simple', vibes: 'viceroy' };
 
 // 0 = thinned to a single-stitch line (the classic stitched-on-paper look).
 export const WEIGHTS = [
@@ -24,7 +23,7 @@ export const WEIGHTS = [
 ];
 
 export const fontById = (id) => FONTS.find((f) => f.id === (ALIASES[id] || id)) || FONTS[0];
-export const fontCss = (f, px) => (f.kind === 'chart' ? fontCss(HAND, px) : `${f.style} ${f.weight} ${px}px ${f.family}, cursive`);
+export const fontCss = (f, px) => (f.kind === 'chart' ? `${px}px serif` : `${f.style} ${f.weight} ${px}px ${f.family}, cursive`);
 
 // For charted fonts, "size" relates to capital height the same way it does for type fonts.
 const CAP_RATIO = 0.72;
@@ -172,14 +171,25 @@ export function chartScale(font, size) {
 }
 
 const fallbackCache = new Map();
-/** Characters a chart doesn't have (numbers, &, +, punctuation) come from the handwritten style. */
+/**
+ * Characters a chart doesn't have (numbers, &, +, punctuation) come from the Simple chart,
+ * enlarged to match the font's capital height.
+ */
 function fallbackGlyph(font, fontId, ch) {
-  const key = `${fontId}|${ch}|${fontEpoch}`;
+  const key = `${fontId}|${ch}`;
   let g = fallbackCache.get(key);
   if (!g) {
-    const size = Math.round((font.capHeight * 0.85) / 0.68);
-    const { bm, base } = typeRaster(HAND, [ch], size, FONTS.find((f) => f.id === fontId).fallbackWeight, 'left');
-    g = { w: bm.w, h: bm.h, base, data: bm.data };
+    const simple = CHART_FONTS.simple;
+    const src = simple.glyphs[ch];
+    if (!src) {
+      g = { w: 2, h: 1, base: 1, data: new Uint8Array(2) }; // unknown character: a small blank
+    } else {
+      let k = font.capHeight / simple.capHeight;
+      const r = Math.round(k);
+      if (r >= 1 && k >= r * 0.92 && k <= r * 1.2) k = r;
+      const bm = k === 1 ? src : Number.isInteger(k) ? scaleUp(src, k) : resample(src, k);
+      g = { w: bm.w, h: bm.h, base: Math.max(1, Math.round(src.base * k)), data: bm.data };
+    }
     fallbackCache.set(key, g);
   }
   return g;

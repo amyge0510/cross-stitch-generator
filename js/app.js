@@ -41,7 +41,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v4';
+const STORE = 'stitched:v5';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -58,6 +58,27 @@ const printOpts = {
 const byId = (id) => doc.elements.find((e) => e.id === id);
 const selected = () => (selectedId ? byId(selectedId) : null);
 
+/*
+ * Every element remembers its "home": where its center sits as a fraction of the card, and its size as a
+ * fraction of the card's shorter side. Changing the card size rebuilds the layout from these, so each
+ * card size always gets the same photo and stitch sizes, however many times you switch back and forth.
+ * Home is only updated when the person places something (template, add, drag, resize, nudge).
+ */
+function setHome(el, d = doc) {
+  const b = boundsOf(d, el);
+  const m = Math.min(d.w, d.h);
+  const home = { cx: (b.x + b.w / 2) / d.w, cy: (b.y + b.h / 2) / d.h };
+  if (el.type === 'photo') { home.k = el.w / m; home.ar = el.h / el.w; }
+  else if (el.type === 'text') {
+    home.k = ((el.baseSize ?? el.size) * d.pitch) / m;
+    if (el.maxW) home.mw = el.maxW / m;
+    if (el.maxH) home.mh = el.maxH / m;
+  } else if (el.type === 'motif') home.k = (el.scale * d.pitch) / m;
+  else if (el.type === 'frame') { home.fc = (el.cols * d.pitch) / d.w; home.fr = (el.rows * d.pitch) / d.h; }
+  el.home = home;
+}
+const setHomes = (d = doc) => d.elements.forEach((el) => setHome(el, d));
+
 function textEl(text, extra = {}) {
   return {
     id: uid(), type: 'text', text, font: prefs.font, size: prefs.size, weight: prefs.weight,
@@ -66,7 +87,9 @@ function textEl(text, extra = {}) {
 }
 
 function starterDoc() {
-  return buildTemplate(TEMPLATES[0], { pitch: DEFAULT_PITCH, uid });
+  const d = buildTemplate(TEMPLATES[0], { pitch: DEFAULT_PITCH, uid });
+  setHomes(d);
+  return d;
 }
 
 /** Switch to a template, carrying over photos and words the person already added. */
@@ -91,6 +114,7 @@ function applyTemplate(id, { fresh = false } = {}) {
   });
   prefs.thread = t.thread;
   doc = next;
+  setHomes();
   selectedId = null;
   cropId = null;
   commit();
@@ -433,6 +457,7 @@ function endDrag() {
   const el = byId(drag.id);
   if (drag.moved && el) {
     if (isStitch(el)) snapStitch(doc, el);
+    if (drag.kind !== 'pan') setHome(el);
     commit();
   }
   canvas.style.cursor = drag.kind === 'pan' ? 'grab' : 'default';
@@ -546,6 +571,7 @@ function addElement(el, { at, index } = {}) {
   if (at) placeAt(el, at.x, at.y);
   if (index === undefined) doc.elements.push(el);
   else doc.elements.splice(index, 0, el);
+  setHome(el);
   selectedId = null;
   select(el.id);
   commit();
@@ -722,6 +748,7 @@ function setShape(el, shapeId) {
   const fit = Math.min(1, (doc.w * 0.95) / w, (doc.h * 0.95) / h);
   w *= fit; h *= fit;
   Object.assign(el, { w, h, x: cx - w / 2, y: cy - h / 2, panX: 0, panY: 0 });
+  setHome(el);
 }
 
 function currentShape(el) {
@@ -811,37 +838,33 @@ function swatches(container, colors, onClick) {
   }
 }
 
-/** Resizes the card and scales everything on it with the card, so the layout keeps its proportions. */
+/** Resizes the card and lays everything out again from each element's home, so sizes never drift. */
 function setCanvasSize(w, h) {
   w = clamp(+w || doc.w, 2, 16);
   h = clamp(+h || doc.h, 2, 16);
   if (w === doc.w && h === doc.h) return;
   flush();
-  const fx = w / doc.w, fy = h / doc.h;
-  const f = Math.min(fx, fy); // uniform factor so nothing gets stretched or pushed off the card
-  const items = doc.elements.map((el) => {
-    const b = boundsOf(doc, el);
-    return [el, (b.x + b.w / 2) * fx, (b.y + b.h / 2) * fy];
-  });
+  for (const el of doc.elements) if (!el.home) setHome(el); // designs saved before homes existed
   doc.w = w; doc.h = h;
-  const g = gridOf(doc);
-  for (const [el, cx, cy] of items) {
+  const m = Math.min(w, h);
+  const p = doc.pitch;
+  for (const el of doc.elements) {
+    const H = el.home;
     if (el.type === 'photo') {
-      el.w *= f; el.h *= f;
+      el.w = H.k * m; el.h = el.w * H.ar;
     } else if (el.type === 'text') {
-      el.size = Math.max(5, Math.round(el.size * f));
-      if (el.baseSize) el.baseSize = Math.max(5, Math.round(el.baseSize * f));
-      if (el.maxW) el.maxW *= f;
-      if (el.maxH) el.maxH *= f;
+      el.size = el.baseSize = Math.max(5, Math.round((H.k * m) / p));
+      if (H.mw) el.maxW = H.mw * m;
+      if (H.mh) el.maxH = H.mh * m;
       fitText(doc, el);
     } else if (el.type === 'motif') {
-      el.scale = Math.max(0.25, el.scale * f);
+      el.scale = Math.max(0.25, (H.k * m) / p);
     } else if (el.type === 'frame') {
-      el.cols = Math.min(g.cols, Math.max(3, Math.round(el.cols * fx)));
-      el.rows = Math.min(g.rows, Math.max(3, Math.round(el.rows * fy)));
+      el.cols = Math.max(3, Math.round((H.fc * w) / p));
+      el.rows = Math.max(3, Math.round((H.fr * h) / p));
     }
-    placeAt(el, cx, cy);
-    // keep it on the card
+    placeAt(el, H.cx * w, H.cy * h);
+    // keep it on the card (without touching its home)
     const b = boundsOf(doc, el);
     if (b.w <= doc.w) el.x += Math.max(0, -b.x) - Math.max(0, b.x + b.w - doc.w);
     if (b.h <= doc.h) el.y += Math.max(0, -b.y) - Math.max(0, b.y + b.h - doc.h);
@@ -908,16 +931,6 @@ function buildPanel() {
   $('#uploadBtn').addEventListener('click', () => pickFiles());
   buildStyleChips();
   chips($('#shapeChips'), SHAPES, { onClick: (id) => updateSelected((el) => setShape(el, id)) });
-  chips($('#edgeChips'), EDGES, { onClick: (id) => updateSelected((el) => { el.edge = id; }) });
-  $('#photoZoom').addEventListener('input', (e) => updateSelected((el) => { el.zoom = +e.target.value; }, { live: true }));
-  $('#photoBri').addEventListener('input', (e) => updateSelected((el) => { el.brightness = +e.target.value; }, { live: true }));
-  $('#photoCon').addEventListener('input', (e) => updateSelected((el) => { el.contrast = +e.target.value; }, { live: true }));
-  $('#cropBtn').addEventListener('click', () => (cropId ? exitCrop() : enterCrop(selectedId)));
-  $('#replaceBtn').addEventListener('click', () => pickFiles(selectedId));
-  for (const id of ['#photoZoom', '#photoBri', '#photoCon']) {
-    $(id).addEventListener('change', flush);
-    $(id).addEventListener('blur', flush);
-  }
 
   // text
   buildLetterChips();
@@ -977,15 +990,19 @@ function renderTemplateThumbs() {
 
 const allPhotos = () => doc.elements.filter((e) => e.type === 'photo');
 
+const selectedPhoto = () => (selected()?.type === 'photo' ? selected() : null);
+
+/** Photo style applies to the selected photo, or to every photo when none is selected. */
 let styleFor = null;
 function buildStyleChips() {
-  const first = allPhotos().find((e) => images.get(e.imgId));
-  const key = first ? first.imgId : 'none';
+  const sel = selectedPhoto();
+  const src = sel && images.get(sel.imgId) ? sel : allPhotos().find((e) => images.get(e.imgId));
+  const key = src ? src.imgId : 'none';
   if (styleFor === key) return;
   styleFor = key;
   const box = $('#styleChips');
   box.innerHTML = '';
-  const image = first && images.get(first.imgId);
+  const image = src && images.get(src.imgId);
   const small = image ? applyFilter(image.img, image.w, image.h, 'original', 0, 0, 120) : null;
   for (const f of FILTERS) {
     const b = document.createElement('button');
@@ -1007,8 +1024,9 @@ function buildStyleChips() {
     }
     b.append(cv, document.createTextNode(f.name));
     b.addEventListener('click', () => {
-      const photos = allPhotos();
-      if (!photos.length) { toast('This template has no photo spots. Add one under “Make it your own”.'); return; }
+      const one = selectedPhoto();
+      const photos = one ? [one] : allPhotos();
+      if (!photos.length) { toast('This design has no photo spots. Pick a template with a photo.'); return; }
       for (const p of photos) p.filter = f.id;
       commit();
       render();
@@ -1029,7 +1047,7 @@ function buildLetterChips() {
     b.type = 'button';
     b.className = 'font-chip';
     b.dataset.id = f.id;
-    b.append(fontPreview(f, f.id === 'hand' ? 'Amy' : 'AJ'), Object.assign(document.createElement('small'), { textContent: f.name }));
+    b.append(fontPreview(f, f.id === 'simple' ? 'Amy' : 'AJ'), Object.assign(document.createElement('small'), { textContent: f.name }));
     b.addEventListener('click', () => {
       prefs.letter = f.id;
       prefs.font = f.id;
@@ -1201,44 +1219,8 @@ const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&l
 
 // ---------------------------------------------------------------- sync panel with state
 
-let thumbsFor = null;
-function buildFilterThumbs(el) {
-  const box = $('#filterChips');
-  const image = images.get(el.imgId);
-  const key = image ? el.imgId : 'none';
-  if (thumbsFor === key) return;
-  thumbsFor = key;
-  box.innerHTML = '';
-  const small = image ? applyFilter(image.img, image.w, image.h, 'original', 0, 0, 140) : null;
-  for (const f of FILTERS) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'filter';
-    b.dataset.id = f.id;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = 96;
-    if (small) {
-      const t = applyFilter(small, small.width, small.height, f.id, 0, 0, 140);
-      const s = Math.max(96 / t.width, 96 / t.height);
-      cv.getContext('2d').drawImage(t, (96 - t.width * s) / 2, (96 - t.height * s) / 2, t.width * s, t.height * s);
-    } else {
-      const g = cv.getContext('2d');
-      const grad = g.createLinearGradient(0, 0, 96, 96);
-      grad.addColorStop(0, '#e9c9b5'); grad.addColorStop(1, '#6d8fb3');
-      g.fillStyle = grad; g.fillRect(0, 0, 96, 96);
-      const t = applyFilter(cv, 96, 96, f.id, 0, 0, 96);
-      g.drawImage(t, 0, 0);
-    }
-    b.append(cv, document.createTextNode(f.name));
-    b.addEventListener('click', () => updateSelected((x) => { x.filter = f.id; }));
-    box.appendChild(b);
-  }
-}
-
 /** Light sync for things that change continuously while dragging/sliding. */
 function syncLive() {
-  const el = selected();
-  if (el?.type === 'photo') $('#photoZoom').value = el.zoom || 1;
   const threadColor = doc.elements.find(isStitch)?.color || prefs.thread;
   setOn($('#paperSwatches'), doc.paper.toUpperCase());
   setOn($('#threadSwatches'), threadColor.toUpperCase());
@@ -1260,21 +1242,11 @@ function sync() {
   buildStyleChips();
   const photos = allPhotos();
   const shared = photos.length && photos.every((p) => p.filter === photos[0].filter) ? photos[0].filter : '';
-  setOn($('#styleChips'), shared);
-  const isPhoto = el?.type === 'photo';
-  $('#photoEdit').hidden = !isPhoto;
-  if (isPhoto) {
-    buildFilterThumbs(el);
-    setOn($('#filterChips'), el.filter || 'original');
-    setOn($('#shapeChips'), currentShape(el));
-    setOn($('#edgeChips'), el.edge || 'none');
-    $('#photoBri').value = el.brightness || 0;
-    $('#photoCon').value = el.contrast || 0;
-    const has = !!images.get(el.imgId);
-    $('#cropBtn').disabled = !has;
-    $('#cropBtn').textContent = cropId ? 'Done cropping' : 'Reposition / crop';
-    $('#replaceBtn').textContent = has ? 'Replace photo' : 'Choose photo';
-  }
+  const selPhoto = selectedPhoto();
+  setOn($('#styleChips'), selPhoto ? selPhoto.filter || 'original' : shared);
+  $('#styleTarget').textContent = selPhoto ? '· selected photo' : '';
+  $('#photoEdit').hidden = !selPhoto;
+  if (selPhoto) setOn($('#shapeChips'), currentShape(selPhoto));
 
   syncWords();
 
@@ -1345,6 +1317,7 @@ document.addEventListener('keydown', (e) => {
     el.x += arrows[k][0] * step;
     el.y += arrows[k][1] * step;
     if (isStitch(el)) snapStitch(doc, el);
+    setHome(el);
     render();
     commitSoon(400);
   }

@@ -23,14 +23,14 @@ export const TEMPLATES = [
     ],
   },
   {
-    // "where love grows": chunky script words around a black & white photo, and a little heart.
+    // "where love grows": words around a black & white photo, and a little heart.
     id: 'words', name: 'Love note', note: 'words around the photo',
-    w: 7, h: 5, paper: '#FFFFFF', thread: '#C1121F', font: 'hand',
+    w: 7, h: 5, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
     elements: [
       PHOTO(1.68, 0.96, 3.7, 2.95, { filter: 'classic' }),
-      { type: 'text', slot: 'w1', text: 'where', cx: 1.66, cy: 0.91, h: 1.35, weight: 2, maxW: 2.9, maxH: 1.4 },
-      { type: 'text', slot: 'w2', text: 'love', cx: 5.75, cy: 1.35, h: 1.35, weight: 2, maxW: 2.2, maxH: 1.4 },
-      { type: 'text', slot: 'w3', text: 'grows', cx: 4.15, cy: 3.99, h: 1.35, weight: 2, maxW: 2.9, maxH: 1.5 },
+      { type: 'text', slot: 'w1', text: 'where', cx: 1.66, cy: 0.91, h: 0.8, maxW: 2.9, maxH: 1.4 },
+      { type: 'text', slot: 'w2', text: 'love', cx: 5.75, cy: 1.35, h: 0.8, maxW: 2.2, maxH: 1.4 },
+      { type: 'text', slot: 'w3', text: 'grows', cx: 4.15, cy: 3.99, h: 0.8, maxW: 2.9, maxH: 1.5 },
       { type: 'motif', motif: 'heart', cx: 1.59, cy: 3.37, h: 0.55 },
     ],
   },
@@ -45,12 +45,12 @@ export const TEMPLATES = [
     ],
   },
   {
-    // A big color photo, "you + me" in thin script stitched over its corner, sparkles around.
-    id: 'youme', name: 'You + me', note: 'script & sparkles',
-    w: 7, h: 5, paper: '#FFFFFF', thread: '#C1121F', font: 'hand',
+    // A big color photo, "you + me" stitched over its corner, sparkles around.
+    id: 'youme', name: 'You + me', note: 'words & sparkles',
+    w: 7, h: 5, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
     elements: [
       PHOTO(0.83, 0.87, 5.0, 3.3, { filter: 'original' }),
-      { type: 'text', slot: 'phrase', text: 'you\n+ me', cx: 4.7, cy: 3.05, h: 1.45, weight: 0, maxW: 3.4, maxH: 3.1 },
+      { type: 'text', slot: 'phrase', text: 'you\n+ me', cx: 4.7, cy: 3.0, h: 1.6, maxW: 3.4, maxH: 3.6 },
       { type: 'motif', motif: 'sparkle', cx: 5.33, cy: 0.87, h: 0.5 },
       { type: 'motif', motif: 'sparkle-small', cx: 3.89, cy: 1.0, h: 0.36 },
       { type: 'motif', motif: 'sparkle-small', cx: 5.8, cy: 1.68, h: 0.36 },
@@ -62,7 +62,7 @@ export const TEMPLATES = [
   {
     // Two blocky rose sprigs climbing the left edge of a portrait photo.
     id: 'roses', name: 'Roses', note: 'red rose sprigs',
-    w: 6, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'hand',
+    w: 6, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
     elements: [
       PHOTO(2.4, 1.6, 3.2, 4.4, { filter: 'original' }),
       { type: 'motif', motif: 'rose-sprig', cx: 2.35, cy: 2.65, h: 2.0 },

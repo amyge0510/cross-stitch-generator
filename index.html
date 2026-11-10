@@ -8,7 +8,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23f4efe6'/><path d='M9 9l14 14M23 9L9 23' stroke='%23b3202a' stroke-width='4.5' stroke-linecap='round'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Dancing+Script:wght@700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -86,24 +86,12 @@
             <strong>＋ Upload photos</strong>
             <small>they fill the photo spots in order · or drag onto the card</small>
           </button>
-          <div class="sub">Photo style</div>
+          <div class="sub">Photo style <span class="target" id="styleTarget"></span></div>
           <div class="filters compact" id="styleChips"></div>
-          <p class="hint">Tap a photo on the card to crop, zoom or give it a border.</p>
+          <p class="hint">Tap a photo on the card to style or reshape just that one.</p>
           <div class="edit-block" id="photoEdit" hidden>
-            <div class="edit-title">Selected photo</div>
-            <div class="sub">Filter</div>
-            <div class="filters" id="filterChips"></div>
             <div class="sub">Shape</div>
             <div class="chips" id="shapeChips"></div>
-            <div class="sub">Edge</div>
-            <div class="chips" id="edgeChips"></div>
-            <label class="slider">Zoom <input type="range" id="photoZoom" min="1" max="4" step="0.01"></label>
-            <label class="slider">Brightness <input type="range" id="photoBri" min="-1" max="1" step="0.05"></label>
-            <label class="slider">Contrast <input type="range" id="photoCon" min="-1" max="1" step="0.05"></label>
-            <div class="btn-row">
-              <button class="small" id="cropBtn">Reposition / crop</button>
-              <button class="small" id="replaceBtn">Replace photo</button>
-            </div>
           </div>
         </section>
 
@@ -115,7 +103,7 @@
         </section>
 
         <p class="micro">MADE PRIVATELY IN YOUR BROWSER</p>
-        <p class="credits">Antique alphabet charted by the <a href="https://www.antiquepatternlibrary.org" target="_blank" rel="noopener">Antique Pattern Library</a>, CC BY-NC-SA 4.0. Viceroy alphabet from the “Monograma Viceroy” chart.</p>
+        <p class="credits">Antique alphabet charted by the <a href="https://www.antiquepatternlibrary.org" target="_blank" rel="noopener">Antique Pattern Library</a>, CC BY-NC-SA 4.0. Viceroy alphabet from the “Monograma Viceroy” chart; Simple from a “Handmade with Love!” sampler chart.</p>
       </aside>
     </main>
   </div>
