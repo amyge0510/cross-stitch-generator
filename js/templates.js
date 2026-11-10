@@ -7,6 +7,7 @@
 //   frame: style, inset (supported, though no current template uses one)
 import { MOTIFS } from './motifs.js';
 import { boundsOf, snapStitch, gridOf } from './render.js';
+import { fontById, nativeSize } from './stitch.js';
 
 const PHOTO = (x, y, w, h, extra = {}) => ({ type: 'photo', x, y, w, h, ...extra });
 
@@ -19,9 +20,9 @@ export const TEMPLATES = [
     w: 10, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'simple',
     elements: [
       PHOTO(3.0, 2.1, 4.6, 3.5, { filter: 'classic' }),
-      { type: 'text', slot: 'w1', text: 'where', cx: 2.75, cy: 1.2, h: 1.57, maxW: 5.0, maxH: 1.75 },
-      { type: 'text', slot: 'w2', text: 'love', cx: 8.15, cy: 1.75, h: 1.57, maxW: 3.6, maxH: 1.75 },
-      { type: 'text', slot: 'w3', text: 'grows', cx: 6.35, cy: 6.6, h: 1.57, maxW: 4.8, maxH: 1.75 },
+      { type: 'text', slot: 'w1', text: 'where', cx: 2.75, cy: 1.2, h: 1.57, maxW: 5.0, maxH: 2.0 },
+      { type: 'text', slot: 'w2', text: 'love', cx: 8.15, cy: 1.75, h: 1.57, maxW: 3.6, maxH: 2.0 },
+      { type: 'text', slot: 'w3', text: 'grows', cx: 6.35, cy: 6.55, h: 1.57, maxW: 4.8, maxH: 2.0 },
       { type: 'motif', motif: 'heart', cx: 2.05, cy: 4.9, h: 0.85 },
     ],
   },
@@ -59,14 +60,60 @@ export const TEMPLATES = [
 
 export const templateById = (id) => TEMPLATES.find((t) => t.id === id);
 
-/** Shrinks template text (from its designed size) until it fits its box. */
-export function fitText(doc, el) {
-  if (el.type !== 'text' || !(el.maxW || el.maxH)) return;
-  if (el.baseSize) el.size = el.baseSize;
-  for (let i = 0; i < 40 && el.size > 6; i++) {
+/*
+ * Text layout is computed fresh from three things, never from the previous layout:
+ *   the words, the lettering style, and the text's home on the card:
+ *   home = { cx, cy: center as a fraction of the card; k: designed letter size as a fraction of the
+ *            card's shorter side; mw, mh: the box it must fit in, same units }.
+ * So switching fonts, card sizes or templates can never make text drift or shrink step by step.
+ * Charted fonts are stitched at a whole multiple of their chart (crisp); they're only resampled below 1×
+ * when the words wouldn't otherwise fit. Texts that share a `group` (a template's words) share one size.
+ */
+function fitScale(doc, el, f, S, maxW, maxH) {
+  const fits = () => {
     const b = boundsOf(doc, el);
-    if ((!el.maxW || b.w <= el.maxW + 1e-6) && (!el.maxH || b.h <= el.maxH + 1e-6)) break;
-    el.size = Math.max(6, Math.floor(el.size * 0.93));
+    return (!maxW || b.w <= maxW + 1e-6) && (!maxH || b.h <= maxH + 1e-6);
+  };
+  if (f.kind !== 'chart') {
+    el.size = Math.max(6, Math.round(S));
+    while (el.size > 6 && !fits()) el.size = Math.max(6, Math.floor(el.size * 0.94));
+    return el.size / Math.max(1, S);
+  }
+  const native = nativeSize(f);
+  for (let n = Math.max(1, Math.round(S / native)); n >= 1; n--) {
+    el.size = native * n;
+    if (fits()) return n;
+  }
+  // Even 1× is too big: shrink just enough (resampled).
+  let size = native;
+  const b = boundsOf(doc, el);
+  size = Math.floor(native * Math.min(maxW ? maxW / b.w : 1, maxH ? maxH / b.h : 1));
+  el.size = Math.max(6, size);
+  while (el.size > 6 && !fits()) el.size -= 1;
+  return el.size / native;
+}
+
+export function layoutTexts(doc, only = null) {
+  const m = Math.min(doc.w, doc.h), p = doc.pitch;
+  const texts = doc.elements.filter((e) => e.type === 'text' && e.home && (!only || only.includes(e) || (e.group && only.some((o) => o.group === e.group))));
+  const scales = new Map();
+  for (const el of texts) {
+    const H = el.home, f = fontById(el.font);
+    const S = (H.k * m) / p;
+    el.baseSize = S;
+    const sc = fitScale(doc, el, f, S, H.mw ? H.mw * m : 0, H.mh ? H.mh * m : 0);
+    if (el.group) scales.set(el.group, Math.min(scales.get(el.group) ?? Infinity, sc));
+  }
+  for (const el of texts) {
+    const f = fontById(el.font);
+    if (el.group) {
+      const sc = scales.get(el.group);
+      el.size = f.kind === 'chart' ? Math.max(6, Math.round(nativeSize(f) * sc)) : Math.max(6, Math.round(el.baseSize * sc));
+    }
+    const b = boundsOf(doc, el);
+    el.x = el.home.cx * doc.w - b.w / 2;
+    el.y = el.home.cy * doc.h - b.h / 2;
+    snapStitch(doc, el);
   }
 }
 
@@ -82,7 +129,7 @@ function place(doc, el, cx, cy) {
  * Builds a design from a template.
  * texts: { slot: text } to carry over what the person already typed.
  */
-export function buildTemplate(t, { pitch, texts = {}, uid, font = null }) {
+export function buildTemplate(t, { pitch, texts = {}, uid }) {
   const doc = { w: t.w, h: t.h, pitch, paper: t.paper, grain: true, template: t.id, elements: [] };
   for (const s of t.elements) {
     if (s.type === 'photo') {
@@ -91,14 +138,12 @@ export function buildTemplate(t, { pitch, texts = {}, uid, font = null }) {
         zoom: 1, panX: 0, panY: 0, filter: s.filter || 'classic', edge: s.edge || 'none', brightness: 0, contrast: 0,
       });
     } else if (s.type === 'text') {
-      const size = Math.max(5, Math.round(s.h / pitch));
-      const el = {
-        id: uid(), type: 'text', slot: s.slot, label: s.label, text: texts[s.slot] ?? s.text,
-        font: s.font || font || t.font, size, baseSize: size, maxW: s.maxW, maxH: s.maxH, weight: s.weight ?? 0,
-        align: s.align || 'center', color: t.thread, x: 0, y: 0,
-      };
-      fitText(doc, el);
-      place(doc, el, s.cx, s.cy);
+      const m = Math.min(t.w, t.h);
+      doc.elements.push({
+        id: uid(), type: 'text', slot: s.slot, group: 'template', text: texts[s.slot] ?? s.text,
+        font: s.font || t.font, size: 10, weight: s.weight ?? 0, align: s.align || 'center', color: t.thread, x: 0, y: 0,
+        home: { cx: s.cx / t.w, cy: s.cy / t.h, k: s.h / m, mw: s.maxW / m, mh: s.maxH / m },
+      });
     } else if (s.type === 'motif') {
       const m = MOTIFS.find((x) => x.id === s.motif);
       const natural = (s.rot % 2 ? Math.max(...m.rows.map((r) => r.length)) : m.rows.length) * pitch;
@@ -115,5 +160,6 @@ export function buildTemplate(t, { pitch, texts = {}, uid, font = null }) {
       });
     }
   }
+  layoutTexts(doc);
   return doc;
 }

@@ -358,7 +358,7 @@ function drawPhoto(ctx, el, image, toX, toY, ppi, shadows, placeholders) {
     ctx.font = `500 ${fs}px "Archivo Narrow", sans-serif`;
     ctx.fillText('drop a photo here', X + Wd / 2, Y + Ht / 2 - fs * 0.6);
     ctx.font = `${fs * 0.75}px "DM Mono", monospace`;
-    ctx.fillText('or double-click / tap twice', X + Wd / 2, Y + Ht / 2 + fs * 0.7);
+    ctx.fillText('or double-click', X + Wd / 2, Y + Ht / 2 + fs * 0.7);
     ctx.restore();
     return;
   }

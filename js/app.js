@@ -5,7 +5,7 @@ import {
   drawScene, gridOf, boundsOf, snapStitch, photoGeometry, isStitch, paintStitches, stats, EDGES, filteredImage,
 } from './render.js';
 import { printDesign, printPreview, exportPNG, PAPERS, formatLength, inchLabel } from './print.js';
-import { TEMPLATES, templateById, buildTemplate, fitText } from './templates.js';
+import { TEMPLATES, templateById, buildTemplate, layoutTexts } from './templates.js';
 
 const $ = (s) => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -40,7 +40,7 @@ const LOOKS = [
 
 // ---------------------------------------------------------------- state
 
-const STORE = 'stitched:v6';
+const STORE = 'stitched:v7';
 const DEFAULT_PITCH = 1 / 14; // 1.8 mm between holes, how most people stitch paper
 const images = new Map(); // id -> { src, img, w, h }
 let doc = null;
@@ -70,13 +70,13 @@ function setHome(el, d = doc) {
   if (el.type === 'photo') { home.k = el.w / m; home.ar = el.h / el.w; }
   else if (el.type === 'text') {
     home.k = ((el.baseSize ?? el.size) * d.pitch) / m;
-    if (el.maxW) home.mw = el.maxW / m;
-    if (el.maxH) home.mh = el.maxH / m;
+    if (el.home?.mw) home.mw = el.home.mw; // keep the box it fits in
+    if (el.home?.mh) home.mh = el.home.mh;
   } else if (el.type === 'motif') home.k = (el.scale * d.pitch) / m;
   else if (el.type === 'frame') { home.fc = (el.cols * d.pitch) / d.w; home.fr = (el.rows * d.pitch) / d.h; }
   el.home = home;
 }
-const setHomes = (d = doc) => d.elements.forEach((el) => setHome(el, d));
+const setHomes = (d = doc) => d.elements.forEach((el) => { if (!el.home) setHome(el, d); });
 
 function textEl(text, extra = {}) {
   return {
@@ -106,7 +106,7 @@ function applyTemplate(id, { fresh = false } = {}) {
       if (parts.length === 2) [texts.i1, texts.i2] = parts;
     }
   }
-  const next = buildTemplate(t, { pitch: doc ? doc.pitch : DEFAULT_PITCH, texts, uid, font: fresh ? null : prefs.letter });
+  const next = buildTemplate(t, { pitch: doc ? doc.pitch : DEFAULT_PITCH, texts, uid }); // always the template's default look & positions
   next.elements.filter((e) => e.type === 'photo').forEach((spot, i) => {
     const src = photos[i];
     if (src) Object.assign(spot, { imgId: src.imgId, filter: src.filter, brightness: src.brightness, contrast: src.contrast });
@@ -500,7 +500,9 @@ function resize(el, d, p) {
   if (el.type === 'text') {
     el.size = clamp(Math.round(orig.size * f), 5, 160);
     el.baseSize = el.size;
-    delete el.maxW; delete el.maxH; // they sized it by hand, so stop auto-fitting
+    // sized by hand: it now stands on its own, without a fit box or a shared group size
+    delete el.group;
+    if (el.home) { delete el.home.mw; delete el.home.mh; }
   }
   if (el.type === 'motif') el.scale = clamp(Math.round(orig.scale * f), 1, 10);
   const b = boundsOf(doc, el);
@@ -852,10 +854,7 @@ function setCanvasSize(w, h) {
     if (el.type === 'photo') {
       el.w = H.k * m; el.h = el.w * H.ar;
     } else if (el.type === 'text') {
-      el.size = el.baseSize = Math.max(5, Math.round((H.k * m) / p));
-      if (H.mw) el.maxW = H.mw * m;
-      if (H.mh) el.maxH = H.mh * m;
-      fitText(doc, el);
+      continue; // laid out below, together
     } else if (el.type === 'motif') {
       el.scale = Math.max(0.25, (H.k * m) / p);
     } else if (el.type === 'frame') {
@@ -869,6 +868,7 @@ function setCanvasSize(w, h) {
     if (b.h <= doc.h) el.y += Math.max(0, -b.y) - Math.max(0, b.y + b.h - doc.h);
     if (isStitch(el)) snapStitch(doc, el);
   }
+  layoutTexts(doc);
   commit();
   render();
 }
@@ -1052,10 +1052,8 @@ function buildLetterChips() {
     b.addEventListener('click', () => {
       prefs.letter = f.id;
       prefs.font = f.id;
-      for (const el of doc.elements) {
-        if (el.type !== 'text') continue;
-        keepAnchor(el, () => { el.font = f.id; fitText(doc, el); }, { vertical: true });
-      }
+      for (const el of doc.elements) if (el.type === 'text') el.font = f.id;
+      layoutTexts(doc); // same words, same spots, sized for the new lettering
       commit();
       render();
     });
@@ -1063,17 +1061,20 @@ function buildLetterChips() {
   }
 }
 
-/** Adds a new text box in the current lettering, sized to suit the card, and puts the cursor in it. */
+/** Adds a new text box in the current lettering, at the same letter size as the card's other words. */
 function addTextBox() {
   flush();
-  const font = currentLetter();
-  const f = FONTS.find((x) => x.id === font) || FONTS[0];
-  const size = f.kind === 'chart' ? nativeSize(f) : Math.max(8, Math.round(Math.min(doc.w, doc.h) * 0.16 / doc.pitch));
+  const m = Math.min(doc.w, doc.h);
+  const sibling = doc.elements.find((e) => e.type === 'text' && e.home);
   const el = {
-    id: uid(), type: 'text', text: 'love', font: f.id, size, baseSize: size, weight: 0, align: 'center',
-    color: doc.elements.find(isStitch)?.color || prefs.thread, x: 0, y: 0, maxW: doc.w * 0.6, maxH: doc.h * 0.2,
+    id: uid(), type: 'text', text: 'love', font: currentLetter(), size: 10, weight: 0, align: 'center',
+    color: doc.elements.find(isStitch)?.color || prefs.thread, x: 0, y: 0,
+    home: { cx: 0.5, cy: 0.5, k: sibling ? sibling.home.k : 0.2, mw: (doc.w * 0.6) / m, mh: 0.3 },
   };
-  fitText(doc, el);
+  // size it first, then put it in the emptiest spot
+  doc.elements.push(el);
+  layoutTexts(doc, [el]);
+  doc.elements.pop();
   const b = boundsOf(doc, el);
   addElement(el, { at: freeSpot(b.w, b.h) });
   requestAnimationFrame(() => {
@@ -1149,7 +1150,9 @@ function syncWords() {
       input.addEventListener('input', () => {
         const t = byId(el.id);
         if (!t) return;
-        keepAnchor(t, () => { t.text = input.value; fitText(doc, t); }, { vertical: !!t.slot });
+        t.text = input.value;
+        if (!t.home) setHome(t);
+        layoutTexts(doc, [t]);
         render();
         syncLive();
         commitSoon(700);
@@ -1238,7 +1241,6 @@ function sync() {
   setOn($('#sizeChips'), sizeId ? `${sizeId.w}x${sizeId.h}` : '');
   if (document.activeElement !== $('#wIn')) $('#wIn').value = +doc.w.toFixed(2);
   if (document.activeElement !== $('#hIn')) $('#hIn').value = +doc.h.toFixed(2);
-  $('#footInfo').textContent = `${inchLabel(doc.w)} × ${inchLabel(doc.h)} · ${g.cols} × ${g.rows} squares`;
 
   buildStyleChips();
   const photos = allPhotos();
@@ -1346,27 +1348,6 @@ function boot() {
   sync();
   render();
 
-  // Once the cursive fonts arrive, re-rasterize text in place.
-  const loads = FONTS.filter((f) => f.kind === 'type').map((f) => document.fonts.load(fontCss(f, 40), 'love 0123456789&+'));
-  Promise.allSettled(loads).then(() => {
-    const before = new Map(doc.elements.filter((e) => e.type === 'text').map((e) => [e.id, boundsOf(doc, e)]));
-    fontsChanged();
-    for (const el of doc.elements) {
-      const b0 = before.get(el.id);
-      if (!b0) continue;
-      fitText(doc, el);
-      const b1 = boundsOf(doc, el);
-      if (el.align === 'center') el.x += b0.x + b0.w / 2 - (b1.x + b1.w / 2);
-      else if (el.align === 'right') el.x += b0.x + b0.w - (b1.x + b1.w);
-      el.y += b0.y + b0.h / 2 - (b1.y + b1.h / 2);
-      snapStitch(doc, el);
-    }
-    history.stack[history.index] = snapshot();
-    renderTemplateThumbs();
-    document.querySelectorAll('canvas.font-preview').forEach(drawFontPreview);
-    sync();
-    render();
-  });
 }
 
 boot();
