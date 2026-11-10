@@ -29,7 +29,7 @@ export const TEMPLATES = [
     // (lucky overlapping the photo's top edge) and "are … we" along its bottom edge. Measured from a
     // framed card; the photo is deliberately NOT centered.
     id: 'words', name: 'How lucky', w: 10, h: 8, paper: '#FFFFFF', thread: '#C1121F', font: 'simple', filter: 'classic',
-    textSize: 23, // default letter size on the 10×8 card (scaled with the card on other landscape/portrait/square sizes)
+    textSize: { simple: 23, viceroy: 26, gothic: 36 },
     text: { w1: 'how', w2: 'lucky', w3: 'are', w4: 'we' },
     layouts: {
       land: { p1: [0.26, 0.32, 0.73, 0.79], w1: [0.10, 0.08, 0.46, 0.31], w2: [0.17, 0.26, 0.75, 0.57], w3: [0.08, 0.69, 0.44, 0.90], w4: [0.55, 0.67, 0.84, 0.88, { baseline: 'w3' }] },
@@ -45,6 +45,7 @@ export const TEMPLATES = [
   {
     // Cream monogram initials on a maroon mat, overlapping two corners of a black & white photo.
     id: 'monogram', name: 'Monogram', w: 7, h: 5, paper: '#5A1A20', thread: '#F1E6CF', font: 'viceroy', filter: 'classic',
+    textSize: { simple: 30, viceroy: 30, gothic: 34 },
     text: { i1: 'A', i2: 'J' },
     layouts: {
       land: { p1: [0.19, 0.215, 0.81, 0.785], i1: [0.03, 0.03, 0.37, 0.41], i2: [0.63, 0.58, 0.97, 0.97] },
@@ -57,6 +58,7 @@ export const TEMPLATES = [
   {
     // A big color photo, "you + me" stitched over its corner, sparkles around.
     id: 'youme', name: 'You + me', w: 7, h: 5, paper: '#FFFFFF', thread: '#C1121F', font: 'simple', filter: 'original',
+    textSize: { simple: 20, viceroy: 22, gothic: 28 },
     text: { you: 'you', me: '+ me' },
     layouts: {
       land: { p1: [0.145, 0.17, 0.855, 0.83], you: [0.5, 0.38, 0.95, 0.65], me: [0.5, 0.65, 0.95, 0.92],
@@ -140,13 +142,19 @@ export function layoutTexts(doc, only = null) {
   const want = (e) => !only || only.includes(e) || (e.group && only.some((o) => o.group === e.group));
   const boxed = all.filter((e) => want(e) && t && e.tpl && !e.custom && specFor(t, doc, e.tpl));
   const sizes = new Map();
+  // Each template sets a default letter size per lettering style on its default card; other card sizes of
+  // the same kind scale it with the card. (The long strips use their own layouts, sized to their spots.)
   const shape = shapeOf(doc.w, doc.h);
-  const preferred = t && t.textSize && shape !== 'wide' && shape !== 'tall' ? t.textSize * (m / Math.min(t.w, t.h)) : 0;
+  const preferredFor = (font) => {
+    if (!t || !t.textSize || shape === 'wide' || shape === 'tall') return 0;
+    const v = typeof t.textSize === 'number' ? t.textSize : t.textSize[fontById(font).id];
+    return v ? v * (m / Math.min(t.w, t.h)) : 0;
+  };
   for (const el of boxed) {
     const [x0, y0, x1, y1] = specFor(t, doc, el.tpl);
     const maxW = Math.min((x1 - x0) * doc.w, doc.w - 2 * EDGE_MARGIN), maxH = Math.min((y1 - y0) * doc.h, doc.h - 2 * EDGE_MARGIN);
     // the template's preferred size, or as large as fits the box; shrinks only if the words don't fit
-    fitScale(doc, el, fontById(el.font), preferred || (maxH / p) * 1.6, maxW, maxH);
+    fitScale(doc, el, fontById(el.font), preferredFor(el.font) || (maxH / p) * 1.6, maxW, maxH);
     if (el.group) sizes.set(el.group, Math.min(sizes.get(el.group) ?? Infinity, el.size));
   }
   for (const el of boxed) {

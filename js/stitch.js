@@ -7,7 +7,9 @@ import { CHART_FONTS } from './chartfonts.js';
 // "type" fonts are web fonts turned into stitches. Charted letters are stitched exactly as charted
 // at their native size (or a whole multiple of it) and resampled only when they must shrink or grow.
 export const FONTS = [
-  { id: 'viceroy', name: 'Viceroy', kind: 'chart' },
+  // merge: a very detailed chart may stitch each 2×2 block as one stitch at small sizes (Viceroy only;
+  // dense alphabets like Gothic would clog up, so they're always stitched square for square)
+  { id: 'viceroy', name: 'Viceroy', kind: 'chart', merge: true },
   { id: 'simple', name: 'Simple', kind: 'chart' },
   { id: 'gothic', name: 'Gothic', kind: 'chart' },
 ];
@@ -38,7 +40,8 @@ export const nativeSize = (f) => (f.kind === 'chart' ? Math.round(CHART_FONTS[f.
  */
 export const CARD_PITCH = 1 / 14;
 export const MAX_STITCH = 0.16; // inches between holes (4 mm): only really big letters go 2×2
-export const MIN_STITCH = 0.06; // (1.5 mm) smaller than this is needlessly fine
+export const MIN_STITCH = 0.06; // (1.5 mm) below this, a mergeable chart switches to 2×2 blocks
+const FLOOR_STITCH = 0.035; // (0.9 mm) the smallest stitch for charts that are never merged
 /**
  * n: each charted stitch becomes n×n stitches (big letters). d: each d×d block of the chart becomes one
  * stitch (small letters from a very detailed chart, e.g. Viceroy), so stitches stay a regular size.
@@ -48,25 +51,40 @@ export function textStitch(el) {
   const c = f.kind === 'chart' ? CHART_FONTS[f.id].capHeight : 1;
   const capH = Math.max(1, el.size) * CARD_PITCH * CAP_RATIO;
   const s1 = capH / c;
-  if (s1 < MIN_STITCH) {
+  if (s1 < MIN_STITCH && f.merge) {
     const d = Math.min(3, Math.ceil(MIN_STITCH / s1 - 1e-9));
     return { n: 1, d, s: s1 * d };
   }
+  if (s1 < MIN_STITCH) return { n: 1, d: 1, s: Math.max(FLOOR_STITCH, s1) };
   const n = Math.max(1, Math.ceil(capH / (c * MAX_STITCH) - 1e-9));
   return { n, d: 1, s: capH / (c * n) };
 }
 
-/** Each d×d block of the chart becomes one stitch if enough of it is stitched (keeps thin strokes joined). */
+/**
+ * Each d×d block of the chart becomes one stitch when at least half (2 of 4) of it is stitched, so thick
+ * strokes don't turn into heavy double bars; a block with fewer stitched squares is still kept when it
+ * links two separate stitched blocks, so hairlines stay connected.
+ */
 function downsample(bm, d) {
   const W = Math.ceil(bm.w / d), H = Math.ceil(bm.h / d);
+  const cnt = new Uint8Array(W * H);
+  for (let y = 0; y < bm.h; y++) for (let x = 0; x < bm.w; x++) if (bm.data[y * bm.w + x]) cnt[Math.floor(y / d) * W + Math.floor(x / d)]++;
+  const need = Math.max(2, Math.ceil((d * d) / 2));
   const out = makeBitmap(W, H);
+  for (let i = 0; i < W * H; i++) if (cnt[i] >= need) out.data[i] = 1;
+  const on = (x, y) => x >= 0 && y >= 0 && x < W && y < H && out.data[y * W + x] === 1;
+  const add = [];
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      let n = 0;
-      for (let yy = y * d; yy < Math.min(bm.h, y * d + d); yy++) for (let xx = x * d; xx < Math.min(bm.w, x * d + d); xx++) n += bm.data[yy * bm.w + xx];
-      if (n >= Math.max(1, Math.floor(d * d * 0.25))) out.data[y * W + x] = 1;
+      const i = y * W + x;
+      if (out.data[i] || !cnt[i]) continue;
+      const nb = [];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && on(x + dx, y + dy)) nb.push([dx, dy]);
+      // a link in a chain: touches stitched blocks that don't touch each other
+      if (nb.some((a) => nb.some((b) => Math.abs(a[0] - b[0]) > 1 || Math.abs(a[1] - b[1]) > 1))) add.push(i);
     }
   }
+  for (const i of add) out.data[i] = 1;
   return trim(out);
 }
 
